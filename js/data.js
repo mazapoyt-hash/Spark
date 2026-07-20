@@ -2,30 +2,21 @@
 'use strict';
 
 /**
- * Stylish generated avatar (SVG data-URI): duotone gradient, soft blobs,
- * big initial. Deterministic per person via hue pair.
+ * Editorial avatar (SVG data-URI): flat tinted paper, ink frame,
+ * oversized serif initial, one accent mark. Deterministic per person
+ * via hue pair.
  */
 function avatarDataURI(name, h1, h2) {
   const initial = (name || '?').trim().charAt(0).toUpperCase();
+  const bg = `hsl(${h1},32%,76%)`;
+  const shape = `hsl(${h2},38%,58%)`;
+  const ink = '#191610';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 300">
-<defs>
-<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-<stop offset="0" stop-color="hsl(${h1},72%,56%)"/>
-<stop offset="1" stop-color="hsl(${h2},78%,38%)"/>
-</linearGradient>
-<radialGradient id="glow" cx="0.3" cy="0.25" r="0.9">
-<stop offset="0" stop-color="hsla(0,0%,100%,0.5)"/>
-<stop offset="0.55" stop-color="hsla(0,0%,100%,0)"/>
-</radialGradient>
-</defs>
-<rect width="240" height="300" fill="url(#bg)"/>
-<rect width="240" height="300" fill="url(#glow)"/>
-<circle cx="200" cy="252" r="90" fill="hsla(${h2},85%,28%,0.45)"/>
-<circle cx="28" cy="60" r="52" fill="hsla(${h1},90%,72%,0.35)"/>
-<circle cx="180" cy="34" r="6" fill="hsla(0,0%,100%,0.8)"/>
-<circle cx="206" cy="58" r="3.4" fill="hsla(0,0%,100%,0.6)"/>
-<circle cx="40" cy="238" r="4" fill="hsla(0,0%,100%,0.5)"/>
-<text x="120" y="178" font-family="system-ui,-apple-system,'Segoe UI',Roboto,sans-serif" font-size="120" font-weight="800" fill="hsla(0,0%,100%,0.92)" text-anchor="middle">${initial}</text>
+<rect width="240" height="300" fill="${bg}"/>
+<circle cx="182" cy="234" r="82" fill="${shape}"/>
+<rect x="36" y="42" width="64" height="64" fill="none" stroke="${ink}" stroke-width="3"/>
+<text x="118" y="212" font-family="Georgia,'Times New Roman',serif" font-size="168" font-weight="700" fill="${ink}" text-anchor="middle">${initial}</text>
+<text x="196" y="60" font-size="28" fill="#e0421b" text-anchor="middle">&#10045;</text>
 </svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }

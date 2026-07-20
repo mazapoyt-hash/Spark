@@ -5,14 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>DATE ME — real dates, no chats</title>
   <meta name="description" content="No swipes, no endless chats. See who's online nearby, see who liked you for free, and schedule a real date in 5 questions.">
-  <meta name="theme-color" content="#0d0714">
+  <meta name="theme-color" content="#f4efe5">
 
   <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preload" href="fonts/oswald-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="DATE ME">
 
   <link rel="stylesheet" href="css/styles.css">
@@ -24,16 +25,16 @@
 
     <section id="ob-welcome" class="ob">
       <div class="ob-hero">
-        <div class="heart-big">🤍</div>
+        <div class="heart-big">♥</div>
         <div class="pre" data-i18n="ob_welcome">Welcome to</div>
         <h1 class="logo">DATE&nbsp;ME</h1>
         <div class="tagline" data-i18n="tagline">Real dates. No chats.</div>
       </div>
       <ul class="pitch">
-        <li><span class="pi">🚫</span><span data-i18n="ob_pitch_1"></span></li>
-        <li><span class="pi">👀</span><span data-i18n="ob_pitch_2"></span></li>
-        <li><span class="pi">📅</span><span data-i18n="ob_pitch_3"></span></li>
-        <li><span class="pi">📍</span><span data-i18n="ob_pitch_4"></span></li>
+        <li><span class="pi">01</span><span data-i18n="ob_pitch_1"></span></li>
+        <li><span class="pi">02</span><span data-i18n="ob_pitch_2"></span></li>
+        <li><span class="pi">03</span><span data-i18n="ob_pitch_3"></span></li>
+        <li><span class="pi">04</span><span data-i18n="ob_pitch_4"></span></li>
       </ul>
       <button class="btn btn-primary" id="ob-start"><span data-i18n="ob_start"></span> →</button>
     </section>
@@ -101,7 +102,14 @@
     <header class="hdr">
       <span class="logo">DATE&nbsp;ME</span>
       <span class="hdr-online"><i class="dot"></i><span id="online-count"></span></span>
-      <button class="icon-btn" id="btn-settings" aria-label="Settings">⚙️</button>
+      <button class="icon-btn" id="btn-settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="square">
+          <path d="M3 6h18M3 12h18M3 18h18"/>
+          <circle cx="9" cy="6" r="2.2" fill="currentColor" stroke="none"/>
+          <circle cx="15" cy="12" r="2.2" fill="currentColor" stroke="none"/>
+          <circle cx="7" cy="18" r="2.2" fill="currentColor" stroke="none"/>
+        </svg>
+      </button>
     </header>
 
     <main>
@@ -113,8 +121,9 @@
       <!-- 2: she/he liked me -->
       <section class="view" id="view-likes">
         <div>
+          <span class="idx">02</span>
           <div class="section-title" data-i18n="l_title"></div>
-          <span class="freebar">💝 <span id="likes-free"></span></span>
+          <span class="freebar"><span id="likes-free"></span></span>
         </div>
         <div class="lgrid" id="lgrid"></div>
       </section>
@@ -122,6 +131,7 @@
       <!-- 3: meet when & where -->
       <section class="view" id="view-meet">
         <div>
+          <span class="idx">03</span>
           <div class="section-title" data-i18n="meet_title"></div>
           <div class="section-sub" data-i18n="meet_sub"></div>
         </div>
@@ -131,6 +141,7 @@
       <!-- 4: my dates -->
       <section class="view" id="view-dates">
         <div>
+          <span class="idx">04</span>
           <div class="section-title" data-i18n="tab_dates"></div>
         </div>
         <div id="dlists"></div>
@@ -139,18 +150,18 @@
 
     <nav class="tabbar">
       <button class="tab active" data-tab="discover">
-        <span class="ticon">🔥</span><span data-i18n="tab_discover"></span>
+        <span class="tnum">01</span><span data-i18n="tab_discover"></span>
       </button>
       <button class="tab" data-tab="likes">
-        <span class="ticon">💝</span><span data-i18n="tab_likes"></span>
+        <span class="tnum">02</span><span data-i18n="tab_likes"></span>
         <span class="badge hidden" id="badge-likes"></span>
       </button>
       <button class="tab" data-tab="meet">
-        <span class="ticon">📅</span><span data-i18n="tab_meet"></span>
+        <span class="tnum">03</span><span data-i18n="tab_meet"></span>
         <span class="badge hidden" id="badge-meet"></span>
       </button>
       <button class="tab" data-tab="dates">
-        <span class="ticon">💘</span><span data-i18n="tab_dates"></span>
+        <span class="tnum">04</span><span data-i18n="tab_dates"></span>
       </button>
     </nav>
   </div>

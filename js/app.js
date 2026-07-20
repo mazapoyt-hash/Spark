@@ -89,8 +89,8 @@ function toast(text, img) {
 function heartBurst(x, y, n = 12) {
   for (let i = 0; i < n; i++) {
     const s = document.createElement('span');
-    s.className = 'burst';
-    s.textContent = pickOf(['❤️', '💖', '💘', '💜', '✨']);
+    s.className = 'burst' + (i % 3 === 2 ? ' ink' : '');
+    s.textContent = '♥';
     s.style.left = x + 'px';
     s.style.top = y + 'px';
     s.style.setProperty('--dx', rnd(-130, 130) + 'px');
@@ -172,31 +172,30 @@ function renderCurrentView() {
 function personPills(p, withKm = true) {
   return `
     <span class="tagpill online"><i class="dot"></i>${esc(t('d_online'))}</span>
-    ${withKm ? `<span class="tagpill">📍 ${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))}</span>` : ''}
-    <span class="tagpill">🗣 ${esc(langList(p.langs))}</span>`;
+    ${withKm ? `<span class="tagpill">${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))}</span>` : ''}
+    <span class="tagpill">${esc(langList(p.langs))}</span>`;
 }
 
 function renderDiscover() {
   const deck = $('#deck');
   const list = deckList();
   if (!list.length) {
-    deck.innerHTML = `<div class="empty"><div class="eico">🌙</div>
+    deck.innerHTML = `<div class="empty"><div class="eico">✳</div>
       <h3>${esc(t('d_empty_title'))}</h3><p>${esc(t('d_empty_sub', { km: APP_STATE.profile.radiusKm }))}</p></div>`;
     return;
   }
   const p = list[0];
   deck.innerHTML = `
     <article class="pcard enter" data-id="${p.id}">
-      <img class="pimg" src="${avatar(p)}" alt="${esc(p.name)}">
-      <div class="pfade"></div>
+      <div class="pimgwrap"><img class="pimg" src="${avatar(p)}" alt="${esc(p.name)}"></div>
       <div class="pinfo">
         <div class="pname">${esc(p.name)} <span class="age">${p.age}</span> <span class="vbadge">✓</span></div>
         <div class="pmeta">${personPills(p)}</div>
       </div>
     </article>
     <div class="deck-actions">
-      <button class="act skip" id="act-skip" aria-label="${esc(t('d_next'))}">✖️</button>
-      <button class="act like" id="act-like" aria-label="${esc(t('d_like'))}">🤍</button>
+      <button class="act skip" id="act-skip">✕ ${esc(t('d_next'))}</button>
+      <button class="act like" id="act-like">♥ ${esc(t('d_like'))}</button>
     </div>`;
   $('#act-like').onclick = (e) => { heartBurst(e.clientX, e.clientY); deckAction(p.id, true); };
   $('#act-skip').onclick = () => deckAction(p.id, false);
@@ -234,20 +233,20 @@ function renderLikes() {
   const list = likesList();
   $('#likes-free').textContent = t('l_free');
   if (!list.length) {
-    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="eico">👀</div>
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="eico">✳</div>
       <h3>${esc(t('l_empty_title'))}</h3><p>${esc(t('l_empty_sub'))}</p></div>`;
     return;
   }
   grid.innerHTML = list.map((p) => `
     <div class="lcard" data-id="${p.id}">
       <img class="limg" src="${avatar(p)}" alt="${esc(p.name)}">
-      <span class="lheart">❤️</span>
+      <span class="lheart">♥</span>
       <div class="lbody">
-        <div class="lname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:18px;height:18px;font-size:9px">✓</span></div>
-        <div class="lsub">📍 ${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))} · 🗣 ${esc(langList(p.langs))}</div>
+        <div class="lname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:16px;height:16px;font-size:9px">✓</span></div>
+        <div class="lsub">${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))} · ${esc(langList(p.langs))}</div>
         <div class="lbtns">
-          <button class="mini no" title="${esc(t('l_decline'))}">✖️</button>
-          <button class="mini yes" title="${esc(t('l_like_back'))}">🤍</button>
+          <button class="mini no" title="${esc(t('l_decline'))}">✕</button>
+          <button class="mini yes" title="${esc(t('l_like_back'))}">♥</button>
         </div>
       </div>
     </div>`).join('');
@@ -276,10 +275,10 @@ function showMatchModal(id) {
     <div>
       <div class="mm-title">${esc(t('m_title'))}</div>
       <div class="mm-avs"><img src="${myAvatar()}" alt=""><img src="${avatar(p)}" alt=""></div>
-      <div class="mm-heart">💘</div>
+      <div class="mm-heart">♥</div>
       <p class="mm-sub">${esc(t('m_sub', { name: p.name }))}</p>
       <div class="mm-btns">
-        <button class="btn btn-primary" id="mm-go">📅 ${esc(t('m_schedule'))}</button>
+        <button class="btn btn-primary" id="mm-go">${esc(t('m_schedule'))}</button>
         <button class="btn btn-ghost" id="mm-later">${esc(t('m_later'))}</button>
       </div>
     </div>`;
@@ -294,7 +293,7 @@ function renderMeet() {
   const wrap = $('#mlist');
   const list = matchList();
   if (!list.length) {
-    wrap.innerHTML = `<div class="empty"><div class="eico">💘</div>
+    wrap.innerHTML = `<div class="empty"><div class="eico">✳</div>
       <h3>${esc(t('meet_empty_title'))}</h3><p>${esc(t('meet_empty_sub'))}</p></div>`;
     return;
   }
@@ -304,8 +303,8 @@ function renderMeet() {
     <div class="mrow ${off ? 'offline' : ''}" data-id="${p.id}">
       <img class="mimg" src="${avatar(p)}" alt="">
       <div class="mtxt">
-        <div class="mname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:18px;height:18px;font-size:9px">✓</span></div>
-        <div class="msub">${off ? '💤 ' + esc(t('meet_offline')) : `<i class="dot"></i> ${esc(t('d_online'))} · 📍 ${esc(t('d_km', { km: p.km }))}`}</div>
+        <div class="mname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:16px;height:16px;font-size:9px">✓</span></div>
+        <div class="msub">${off ? esc(t('meet_offline')) : `<i class="dot"></i> ${esc(t('d_online'))} · ${esc(t('d_km', { km: p.km }))}`}</div>
       </div>
       ${off ? '' : `<button class="go">${esc(t('meet_cta'))}</button>`}
     </div>`;
@@ -360,7 +359,7 @@ function wzOptions(opts) {
   return new Promise((res) => {
     const zone = wzZone();
     zone.innerHTML = `<div class="wz-opts">${opts.map((o, i) =>
-      `<button class="wz-opt ${o.hot ? 'hot' : ''}" data-i="${i}"><span class="oi">${o.icon}</span>${esc(o.label)}</button>`).join('')}</div>`;
+      `<button class="wz-opt ${o.hot ? 'hot' : ''}" data-i="${i}">${esc(o.label)}</button>`).join('')}</div>`;
     $$('.wz-opt', zone).forEach((b) => { b.onclick = () => { zone.innerHTML = ''; res(+b.dataset.i); }; });
   });
 }
@@ -386,8 +385,8 @@ function wzDatePick() {
     const zone = wzZone();
     zone.innerHTML = `
       <div class="wz-opts">
-        <button class="wz-opt" data-v="${isoPlusDays(0)}"><span class="oi">☀️</span>${esc(t('w_today'))}</button>
-        <button class="wz-opt" data-v="${isoPlusDays(1)}"><span class="oi">🌅</span>${esc(t('w_tomorrow'))}</button>
+        <button class="wz-opt" data-v="${isoPlusDays(0)}">${esc(t('w_today'))}</button>
+        <button class="wz-opt" data-v="${isoPlusDays(1)}">${esc(t('w_tomorrow'))}</button>
       </div>
       <div class="spacer"></div>
       <input class="input" type="date" id="wz-date" min="${isoPlusDays(0)}" value="${isoPlusDays(2)}">`;
@@ -445,8 +444,8 @@ function askYesNo() {
     zone.innerHTML = `
       <div class="wz-q" style="font-size:17px">${esc(t('w_you_sure'))}</div>
       <div class="seg">
-        <button class="wz-opt" id="yn-no"><span class="oi">✖️</span>${esc(t('w_no'))}</button>
-        <button class="wz-opt hot" id="yn-yes"><span class="oi">✅</span>${esc(t('w_yes'))}</button>
+        <button class="wz-opt" id="yn-no">✕ ${esc(t('w_no'))}</button>
+        <button class="wz-opt hot" id="yn-yes">${esc(t('w_yes'))}</button>
       </div>`;
     $('#yn-yes').onclick = () => { zone.innerHTML = ''; res(true); };
     $('#yn-no').onclick = () => { zone.innerHTML = ''; res(false); };
@@ -462,8 +461,8 @@ async function runWizard() {
   wzStep(1);
   wzQ(t('w_q1'));
   const my = (await wzOptions([
-    { icon: '🎯', label: t('w_q1_me'), hot: true },
-    { icon: '🎁', label: t('w_q1_them', { name }) },
+    { label: t('w_q1_me'), hot: true },
+    { label: t('w_q1_them', { name }) },
   ])) === 0 ? 'self' : 'other';
   wzGuard(w);
   meSays(my === 'self' ? t('w_q1_me') : t('w_q1_them', { name }));
@@ -473,7 +472,7 @@ async function runWizard() {
   else if (my === 'other' && their === 'self') w.chooser = 'them';
   else {
     partnerSays(t('w_coin'));
-    wzZone().innerHTML = `<div class="coin">🪙</div>`;
+    wzZone().innerHTML = `<div class="coin">?</div>`;
     await sleep(1700); wzGuard(w);
     w.chooser = Math.random() < 0.5 ? 'me' : 'them';
     wzZone().innerHTML = '';
@@ -507,8 +506,8 @@ async function wizardIChoose(w, name) {
   wzStep(2); wzLogClear();
   wzQ(t('w_q2'));
   w.inside = (await wzOptions([
-    { icon: '🏠', label: t('w_inside'), hot: true },
-    { icon: '🌳', label: t('w_outside') },
+    { label: t('w_inside'), hot: true },
+    { label: t('w_outside') },
   ])) === 0;
   wzGuard(w);
   meSays(w.inside ? t('w_inside') : t('w_outside'));
@@ -622,14 +621,14 @@ async function wizardDone(w, p) {
   wzStep(5);
   $('#wz-body').innerHTML = `
     <div class="wz-done">
-      <div class="big">💘</div>
+      <div class="big">♥</div>
       <h3>${esc(t('w_done_title'))}</h3>
       <p>${esc(t('w_done_sub'))}</p>
       <div class="wz-summary">
-        <div class="srow"><span class="si">💃</span><b>${esc(p.name)}, ${p.age}</b></div>
-        <div class="srow"><span class="si">${w.inside ? '🏠' : '🌳'}</span><span>${esc(w.place)} · ${esc(t(w.inside ? 'dt_place_in' : 'dt_place_out'))}</span></div>
-        <div class="srow"><span class="si">📅</span><b>${esc(fmtDate(w.dateISO))}</b></div>
-        <div class="srow"><span class="si">🕗</span><b>${esc(w.time)}</b></div>
+        <div class="srow"><span class="klabel">${esc(t('lbl_who'))}</span><b>${esc(p.name)}, ${p.age}</b></div>
+        <div class="srow"><span class="klabel">${esc(t('lbl_where'))}</span><span><b>${esc(w.place)}</b> · ${esc(t(w.inside ? 'dt_place_in' : 'dt_place_out'))}</span></div>
+        <div class="srow"><span class="klabel">${esc(t('lbl_day'))}</span><b>${esc(fmtDate(w.dateISO))}</b></div>
+        <div class="srow"><span class="klabel">${esc(t('lbl_time'))}</span><b>${esc(w.time)}</b></div>
       </div>
       <button class="btn btn-primary" id="wz-finish">${esc(t('w_done_btn'))}</button>
     </div>`;
@@ -656,7 +655,7 @@ function renderDates() {
   const past = dates.filter((d) => new Date(d.dateISO + 'T' + d.time) < Date.now());
 
   if (!dates.length) {
-    wrap.innerHTML = `<div class="empty"><div class="eico">📅</div>
+    wrap.innerHTML = `<div class="empty"><div class="eico">✳</div>
       <h3>${esc(t('dt_empty_title'))}</h3><p>${esc(t('dt_empty_sub'))}</p></div>`;
     return;
   }
@@ -667,10 +666,10 @@ function renderDates() {
       <div class="dcard ${isPast ? 'past' : ''}" data-id="${d.id}">
         <img class="dimg" src="${avatar(p)}" alt="">
         <div class="dtxt">
-          <div class="dname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:19px;height:19px;font-size:10px">✓</span></div>
-          <div class="dline"><span>${d.inside ? '🏠' : '🌳'}</span><b>${esc(d.place)}</b></div>
-          <div class="dline"><span>📅</span><span>${esc(fmtDate(d.dateISO))} · <b>${esc(d.time)}</b></span></div>
-          ${!isPast && dateWhenLabel(d) ? `<span class="dwhen">⏳ ${esc(dateWhenLabel(d))}</span>` : ''}
+          <div class="dname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:17px;height:17px;font-size:10px">✓</span></div>
+          <div class="dline"><span class="klabel">${esc(t('lbl_where'))}</span><span><b>${esc(d.place)}</b> · ${esc(t(d.inside ? 'dt_place_in' : 'dt_place_out'))}</span></div>
+          <div class="dline"><span class="klabel">${esc(t('lbl_day'))}</span><span>${esc(fmtDate(d.dateISO))} · <b>${esc(d.time)}</b></span></div>
+          ${!isPast && dateWhenLabel(d) ? `<span class="dwhen">${esc(dateWhenLabel(d))}</span>` : ''}
         </div>
         ${isPast ? '' : `<button class="dx" title="${esc(t('dt_cancel'))}">✕</button>`}
       </div>`;
@@ -717,19 +716,19 @@ function openSettings() {
         <img src="${myAvatar()}" alt="">
         <div>
           <div class="mn">${esc(pr.name)}, ${pr.age} <span class="vbadge">✓</span></div>
-          <div class="ml">🗣 ${esc(langList(pr.langs))}</div>
+          <div class="ml">${esc(langList(pr.langs))}</div>
         </div>
       </div>
 
-      <button class="srow-btn" id="st-profile"><span class="si">👤</span>${esc(t('s_profile'))}<span class="sv">›</span></button>
+      <button class="srow-btn" id="st-profile">${esc(t('s_profile'))}<span class="sv">→</span></button>
 
-      <div class="srow-btn"><span class="si">🌐</span>${esc(t('s_lang'))}
+      <div class="srow-btn">${esc(t('s_lang'))}
         <select class="input" id="st-lang" style="max-width:150px;margin-left:auto;padding:9px 12px">
           ${['en', 'de', 'ru'].map((l) => `<option value="${l}" ${pr.locale === l ? 'selected' : ''}>${LANG_NAMES[l]}</option>`).join('')}
         </select>
       </div>
 
-      <div class="srow-btn" style="flex-wrap:wrap"><span class="si">📍</span>${esc(t('s_radius'))}
+      <div class="srow-btn" style="flex-wrap:wrap">${esc(t('s_radius'))}
         <div class="range-wrap" style="flex-basis:100%">
           <input type="range" id="st-radius" min="1" max="10" step="0.5" value="${pr.radiusKm}">
           <span class="range-val" id="st-radius-val">${pr.radiusKm} km</span>
@@ -737,13 +736,13 @@ function openSettings() {
       </div>
 
       ${isStandalone()
-        ? `<div class="srow-btn"><span class="si">✅</span>${esc(t('s_installed'))}</div>`
-        : `<button class="srow-btn" id="st-install"><span class="si">⬇️</span>${esc(t('s_install'))}
-             <span class="sv" style="max-width:170px;text-align:right;font-size:11.5px">${esc(isIOS ? t('s_ios_hint') : t('s_install_hint'))}</span></button>`}
+        ? `<div class="srow-btn">${esc(t('s_installed'))}</div>`
+        : `<button class="srow-btn" id="st-install">${esc(t('s_install'))}
+             <span class="sv" style="max-width:170px;text-align:right;font-size:11px">${esc(isIOS ? t('s_ios_hint') : t('s_install_hint'))}</span></button>`}
 
-      <button class="srow-btn" id="st-reset" style="color:#ff6b61"><span class="si">🗑</span>${esc(t('s_reset'))}</button>
+      <button class="srow-btn" id="st-reset" style="color:var(--accent)">${esc(t('s_reset'))}</button>
 
-      <div class="about-box">💜 ${esc(t('s_about'))}</div>
+      <div class="about-box">${esc(t('s_about'))}</div>
     </div>`;
   s.classList.remove('hidden');
 
@@ -862,11 +861,11 @@ function playVerification(img) {
       <div>
         <div class="vph"><img src="${img}" alt=""><div class="scan"></div></div>
         <div class="vtxt">${esc(t('ob_checking'))}</div>
-        <div class="section-sub" style="margin-top:6px">📍 ${esc(t('ob_geo'))}</div>
+        <div class="section-sub" style="margin:6px auto 0">${esc(t('ob_geo'))}</div>
       </div>`;
     v.classList.remove('hidden');
     setTimeout(() => {
-      v.innerHTML = `<div><div class="vok">✅</div><div class="vtxt">${esc(t('ob_verified'))}</div></div>`;
+      v.innerHTML = `<div><div class="vok">✓</div><div class="vtxt">${esc(t('ob_verified'))}</div></div>`;
       setTimeout(() => { v.classList.add('hidden'); res(); }, 1100);
     }, 2300);
   });
