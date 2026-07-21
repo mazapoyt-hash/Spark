@@ -137,6 +137,7 @@ let currentTab = 'discover';
 
 function renderHeader() {
   $('#online-count').innerHTML = `<b>${onlineNearby()}</b>&nbsp;${esc(t('online_nearby'))}`;
+  $('#me-avatar').src = myAvatar();
 }
 
 function renderBadges() {
@@ -168,37 +169,90 @@ function renderCurrentView() {
   if (currentTab === 'dates') renderDates();
 }
 
-/* ---------------- discover ---------------- */
-function personPills(p, withKm = true) {
-  return `
-    <span class="tagpill online"><i class="dot"></i>${esc(t('d_online'))}</span>
-    ${withKm ? `<span class="tagpill">${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))}</span>` : ''}
-    <span class="tagpill">${esc(langList(p.langs))}</span>`;
+/* ---------------- discover: the orbit ---------------- */
+let discoverFilter = 'all'; // 'all' | 'near'
+let centralId = null;       // person currently in the middle of the orbit
+
+const NEAR_KM = 3;
+
+/* satellite slots around the central card (percent + size px) */
+const ORBIT_SLOTS = [
+  { x: 22, y: 9, s: 70 }, { x: 79, y: 12, s: 76 },
+  { x: 9, y: 44, s: 82 }, { x: 92, y: 40, s: 66 },
+  { x: 18, y: 84, s: 62 }, { x: 85, y: 79, s: 78 },
+];
+const ORBIT_STARS = [
+  [8, 18], [30, 4], [55, 7], [88, 24], [96, 62],
+  [70, 94], [40, 96], [3, 70], [62, 27], [34, 60],
+];
+
+function orbitList() {
+  const list = deckList();
+  return discoverFilter === 'near' ? list.filter((p) => p.km <= NEAR_KM) : list;
 }
 
 function renderDiscover() {
+  $('#d-head').innerHTML = esc(t('d_head')).replace('{', '<em>').replace('}', '</em>');
+  $('#fpills').innerHTML = `
+    <button class="fpill ${discoverFilter === 'all' ? 'on' : ''}" data-f="all">✦ ${esc(t('f_all'))}</button>
+    <button class="fpill ${discoverFilter === 'near' ? 'on' : ''}" data-f="near">${esc(t('f_near'))}</button>
+    <span class="fpill static"><i class="dot"></i>${onlineNearby()} ${esc(t('d_online'))}</span>`;
+  $$('#fpills .fpill[data-f]').forEach((b) => {
+    b.onclick = () => { discoverFilter = b.dataset.f; centralId = null; renderDiscover(); };
+  });
+
   const deck = $('#deck');
-  const list = deckList();
+  const list = orbitList();
   if (!list.length) {
-    deck.innerHTML = `<div class="empty"><div class="eico">✳</div>
+    deck.innerHTML = `<div class="empty"><div class="eico">✦</div>
       <h3>${esc(t('d_empty_title'))}</h3><p>${esc(t('d_empty_sub', { km: APP_STATE.profile.radiusKm }))}</p></div>`;
     return;
   }
-  const p = list[0];
+  const p = list.find((x) => x.id === centralId) || list[0];
+  centralId = p.id;
+  const sats = list.filter((x) => x.id !== p.id).slice(0, ORBIT_SLOTS.length);
+
   deck.innerHTML = `
-    <article class="pcard enter" data-id="${p.id}">
-      <div class="pimgwrap"><img class="pimg" src="${avatar(p)}" alt="${esc(p.name)}"></div>
-      <div class="pinfo">
-        <div class="pname">${esc(p.name)} <span class="age">${p.age}</span> <span class="vbadge">✓</span></div>
-        <div class="pmeta">${personPills(p)}</div>
-      </div>
-    </article>
+    <div class="orbit">
+      <div class="halo"></div>
+      <div class="ring r1"></div>
+      <div class="ring r2"></div>
+      <div class="stars">${ORBIT_STARS.map(([x, y]) => `<i style="left:${x}%;top:${y}%"></i>`).join('')}</div>
+      <article class="ccard" data-id="${p.id}">
+        <div class="cph">
+          <img src="${avatar(p)}" alt="${esc(p.name)}">
+          <div class="cfade"></div>
+          <div class="cinfo">
+            <div class="cname">${esc(p.name)}, ${p.age} <span class="vbadge">✓</span></div>
+            <div class="ckm">${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))} · ${esc(langList(p.langs))}</div>
+          </div>
+        </div>
+      </article>
+      ${sats.map((s, i) => {
+        const sl = ORBIT_SLOTS[i];
+        return `<button class="oav" data-id="${s.id}" aria-label="${esc(s.name)}"
+          style="--x:${sl.x}%;--y:${sl.y}%;--s:${sl.s}px">
+          <img src="${avatar(s)}" alt=""><i class="spark">✦</i>
+        </button>`;
+      }).join('')}
+    </div>
     <div class="deck-actions">
-      <button class="act skip" id="act-skip">✕ ${esc(t('d_next'))}</button>
-      <button class="act like" id="act-like">♥ ${esc(t('d_like'))}</button>
+      <button class="act skip" id="act-skip" aria-label="${esc(t('d_next'))}">✕</button>
+      <button class="act like" id="act-like" aria-label="${esc(t('d_like'))}">♥</button>
+      <button class="act shuf" id="act-shuf" aria-label="${esc(t('d_shuffle'))}">
+        <svg viewBox="0 0 24 24"><path d="M20 5v5h-5"/><path d="M20 10a8 8 0 10 2 5.3"/></svg>
+      </button>
     </div>`;
+
   $('#act-like').onclick = (e) => { heartBurst(e.clientX, e.clientY); deckAction(p.id, true); };
   $('#act-skip').onclick = () => deckAction(p.id, false);
+  $('#act-shuf').onclick = () => {
+    const others = list.filter((x) => x.id !== p.id);
+    if (others.length) { centralId = pickOf(others).id; renderDiscover(); }
+  };
+  $$('.oav', deck).forEach((b) => {
+    b.onclick = () => { centralId = b.dataset.id; renderDiscover(); };
+  });
 
   if (!APP_STATE.introShown) {
     APP_STATE.introShown = true; save();
@@ -207,10 +261,11 @@ function renderDiscover() {
 }
 
 function deckAction(id, liked) {
-  const card = $('#deck .pcard');
+  const card = $('#deck .ccard');
   if (card) card.classList.add(liked ? 'leave-like' : 'leave-skip');
   const d = dyn(id);
   if (liked) { d.iLiked = true; scheduleLikeBack(id); } else { d.declined = true; }
+  centralId = null;
   save();
   setTimeout(() => { renderDiscover(); renderHeader(); }, 420);
 }
@@ -233,7 +288,7 @@ function renderLikes() {
   const list = likesList();
   $('#likes-free').textContent = t('l_free');
   if (!list.length) {
-    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="eico">✳</div>
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="eico">✦</div>
       <h3>${esc(t('l_empty_title'))}</h3><p>${esc(t('l_empty_sub'))}</p></div>`;
     return;
   }
@@ -293,7 +348,7 @@ function renderMeet() {
   const wrap = $('#mlist');
   const list = matchList();
   if (!list.length) {
-    wrap.innerHTML = `<div class="empty"><div class="eico">✳</div>
+    wrap.innerHTML = `<div class="empty"><div class="eico">✦</div>
       <h3>${esc(t('meet_empty_title'))}</h3><p>${esc(t('meet_empty_sub'))}</p></div>`;
     return;
   }
@@ -655,7 +710,7 @@ function renderDates() {
   const past = dates.filter((d) => new Date(d.dateISO + 'T' + d.time) < Date.now());
 
   if (!dates.length) {
-    wrap.innerHTML = `<div class="empty"><div class="eico">✳</div>
+    wrap.innerHTML = `<div class="empty"><div class="eico">✦</div>
       <h3>${esc(t('dt_empty_title'))}</h3><p>${esc(t('dt_empty_sub'))}</p></div>`;
     return;
   }

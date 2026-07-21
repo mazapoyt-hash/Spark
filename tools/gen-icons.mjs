@@ -65,10 +65,12 @@ const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), pa
 const lerp = (a, b, t) => a + (b - a) * t;
 const mix = (c1, c2, t) => [lerp(c1[0], c2[0], t), lerp(c1[1], c2[1], t), lerp(c1[2], c2[2], t)];
 
-// brand palette: warm paper, ink, vermilion accent
-const PAPER = hex('#f4efe5');
-const INK = hex('#191610');
-const ACCENT = hex('#e0421b');
+// brand palette: deep space, violet neon
+const BG_EDGE = hex('#070609');
+const BG_CORE = hex('#160f27');
+const GLOW = hex('#7c3aed');
+const HEART_TOP = hex('#c68cff');
+const HEART_BOT = hex('#7c3aed');
 
 // classic implicit heart: (x^2 + y^2 - 1)^3 - x^2 * y^3 <= 0  (y points up)
 function inHeart(u, v) {
@@ -84,62 +86,54 @@ function roundedRectCoverage(x, y, size, r) {
 }
 
 /**
- * Print-style tile: flat paper, inset ink frame, vermilion heart with a
- * hard offset ink shadow. No gradients.
+ * Space tile: dark radial base, violet bloom behind a gradient neon heart.
  *
  * @param size    icon edge in px
  * @param opts.rounded  corner radius fraction (0 = square tile for maskable/apple)
  * @param opts.heartScale heart size relative to icon
- * @param opts.frame  draw the inset ink frame (skip for maskable safe zone)
  */
-function drawIcon(size, { rounded = 0.06, heartScale = 0.30, frame = true } = {}) {
+function drawIcon(size, { rounded = 0.22, heartScale = 0.32 } = {}) {
   const px = Buffer.alloc(size * size * 4);
   const r = rounded * size;
   const s = heartScale * size;
   const cx = size / 2;
-  const cy = size / 2 + size * 0.02;
-  const off = size * 0.028;             // hard shadow offset
-  const fIn = size * 0.085;             // frame inset
-  const fW = Math.max(2, size * 0.028); // frame stroke width
+  const cy = size / 2 + size * 0.03;
   const SS = 3; // 3x3 supersampling
   const step = 1 / SS;
 
-  const heartAt = (fx, fy, ox, oy) => {
-    const u = (fx - cx - ox) / s;
-    const v = -(fy - cy - oy) / s + 0.12;
+  const heartAt = (fx, fy) => {
+    const u = (fx - cx) / s;
+    const v = -(fy - cy) / s + 0.12;
     return inHeart(u * 1.05, v);
-  };
-  const frameAt = (fx, fy) => {
-    const lo = fIn, hi = size - fIn;
-    if (fx < lo || fx > hi || fy < lo || fy > hi) return false;
-    return fx < lo + fW || fx > hi - fW || fy < lo + fW || fy > hi - fW;
   };
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      let cov = 0, heartCov = 0, shadowCov = 0, frameCov = 0;
+      let cov = 0, heartCov = 0;
       for (let sy = 0; sy < SS; sy++) {
         for (let sx = 0; sx < SS; sx++) {
           const fx = x + (sx + 0.5) * step;
           const fy = y + (sy + 0.5) * step;
           const inside = rounded > 0 ? roundedRectCoverage(fx, fy, size, r) : 1;
           cov += inside;
-          if (inside) {
-            if (heartAt(fx, fy, 0, 0)) heartCov++;
-            else if (heartAt(fx, fy, off, off)) shadowCov++;
-            if (frame && frameAt(fx, fy)) frameCov++;
-          }
+          if (inside && heartAt(fx, fy)) heartCov++;
         }
       }
       cov /= SS * SS;
       heartCov /= SS * SS;
-      shadowCov /= SS * SS;
-      frameCov /= SS * SS;
 
-      let c = PAPER;
-      if (frameCov > 0) c = mix(c, INK, frameCov);
-      if (shadowCov > 0) c = mix(c, INK, shadowCov);
-      if (heartCov > 0) c = mix(c, ACCENT, heartCov);
+      // dark radial base
+      const dCore = Math.hypot(x - cx, y - cy) / (size * 0.62);
+      let c = mix(BG_CORE, BG_EDGE, Math.min(1, dCore));
+      // violet bloom behind the heart
+      const dHeart = Math.hypot(x - cx, y - cy) / (size * 0.5);
+      const glow = Math.max(0, 1 - dHeart) ** 2 * 0.55;
+      c = mix(c, GLOW, glow);
+      // gradient heart
+      if (heartCov > 0) {
+        const hv = Math.min(Math.max((y - (cy - s * 1.1)) / (s * 2.2), 0), 1);
+        c = mix(c, mix(HEART_TOP, HEART_BOT, hv), heartCov);
+      }
 
       const i = (y * size + x) * 4;
       px[i] = Math.round(c[0]);
@@ -152,11 +146,11 @@ function drawIcon(size, { rounded = 0.06, heartScale = 0.30, frame = true } = {}
 }
 
 const targets = [
-  ['icon-192.png', 192, { rounded: 0.06, heartScale: 0.30, frame: true }],
-  ['icon-512.png', 512, { rounded: 0.06, heartScale: 0.30, frame: true }],
-  ['icon-maskable-192.png', 192, { rounded: 0, heartScale: 0.24, frame: false }],
-  ['icon-maskable-512.png', 512, { rounded: 0, heartScale: 0.24, frame: false }],
-  ['apple-touch-icon.png', 180, { rounded: 0, heartScale: 0.28, frame: true }],
+  ['icon-192.png', 192, { rounded: 0.22, heartScale: 0.33 }],
+  ['icon-512.png', 512, { rounded: 0.22, heartScale: 0.33 }],
+  ['icon-maskable-192.png', 192, { rounded: 0, heartScale: 0.27 }],
+  ['icon-maskable-512.png', 512, { rounded: 0, heartScale: 0.27 }],
+  ['apple-touch-icon.png', 180, { rounded: 0, heartScale: 0.31 }],
 ];
 
 for (const [name, size, opts] of targets) {

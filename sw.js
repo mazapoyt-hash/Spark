@@ -1,12 +1,9 @@
 /* DATE ME — service worker: offline-first app shell */
-const VERSION = 'dateme-v2';
+const VERSION = 'dateme-v3';
 const SHELL = [
   './',
   './index.html',
   './css/styles.css',
-  './fonts/oswald-latin.woff2',
-  './fonts/oswald-latin-ext.woff2',
-  './fonts/oswald-cyr.woff2',
   './js/i18n.js',
   './js/data.js',
   './js/app.js',

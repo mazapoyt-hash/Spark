@@ -2,21 +2,33 @@
 'use strict';
 
 /**
- * Editorial avatar (SVG data-URI): flat tinted paper, ink frame,
- * oversized serif initial, one accent mark. Deterministic per person
+ * Neon avatar (SVG data-URI): deep-space base tinted by hue, a soft violet
+ * glow, a colored blob and a bright centered initial. Composed centered so
+ * it reads well when cropped to a circle or oval. Deterministic per person
  * via hue pair.
  */
 function avatarDataURI(name, h1, h2) {
   const initial = (name || '?').trim().charAt(0).toUpperCase();
-  const bg = `hsl(${h1},32%,76%)`;
-  const shape = `hsl(${h2},38%,58%)`;
-  const ink = '#191610';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 300">
-<rect width="240" height="300" fill="${bg}"/>
-<circle cx="182" cy="234" r="82" fill="${shape}"/>
-<rect x="36" y="42" width="64" height="64" fill="none" stroke="${ink}" stroke-width="3"/>
-<text x="118" y="212" font-family="Georgia,'Times New Roman',serif" font-size="168" font-weight="700" fill="${ink}" text-anchor="middle">${initial}</text>
-<text x="196" y="60" font-size="28" fill="#e0421b" text-anchor="middle">&#10045;</text>
+<defs>
+<linearGradient id="b" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="hsl(${h1},52%,21%)"/>
+<stop offset="1" stop-color="#08070e"/>
+</linearGradient>
+<radialGradient id="g" cx="0.5" cy="0.4" r="0.65">
+<stop offset="0" stop-color="hsla(${h1},88%,64%,0.5)"/>
+<stop offset="0.6" stop-color="hsla(${h2},82%,52%,0.12)"/>
+<stop offset="1" stop-color="hsla(0,0%,0%,0)"/>
+</radialGradient>
+</defs>
+<rect width="240" height="300" fill="url(#b)"/>
+<circle cx="188" cy="252" r="76" fill="hsla(${h2},72%,56%,0.3)"/>
+<circle cx="120" cy="140" r="150" fill="url(#g)"/>
+<circle cx="46" cy="60" r="2.6" fill="rgba(255,255,255,0.85)"/>
+<circle cx="205" cy="96" r="2" fill="hsla(268,90%,80%,0.9)"/>
+<circle cx="60" cy="232" r="1.8" fill="rgba(255,255,255,0.6)"/>
+<text x="120" y="196" font-family="ui-rounded,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif" font-size="150" font-weight="800" fill="rgba(255,255,255,0.95)" text-anchor="middle">${initial}</text>
+<text x="196" y="66" font-size="24" fill="#c084fc" text-anchor="middle">&#10022;</text>
 </svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }

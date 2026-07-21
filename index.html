@@ -5,15 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>DATE ME — real dates, no chats</title>
   <meta name="description" content="No swipes, no endless chats. See who's online nearby, see who liked you for free, and schedule a real date in 5 questions.">
-  <meta name="theme-color" content="#f4efe5">
+  <meta name="theme-color" content="#050506">
 
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="preload" href="fonts/oswald-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="DATE ME">
 
   <link rel="stylesheet" href="css/styles.css">
@@ -102,28 +101,27 @@
     <header class="hdr">
       <span class="logo">DATE&nbsp;ME</span>
       <span class="hdr-online"><i class="dot"></i><span id="online-count"></span></span>
-      <button class="icon-btn" id="btn-settings" aria-label="Settings">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="square">
-          <path d="M3 6h18M3 12h18M3 18h18"/>
-          <circle cx="9" cy="6" r="2.2" fill="currentColor" stroke="none"/>
-          <circle cx="15" cy="12" r="2.2" fill="currentColor" stroke="none"/>
-          <circle cx="7" cy="18" r="2.2" fill="currentColor" stroke="none"/>
-        </svg>
+      <button class="avatar-btn" id="btn-settings" aria-label="Settings">
+        <img id="me-avatar" alt="">
       </button>
     </header>
 
     <main>
       <!-- 1: I like her/him -->
       <section class="view active" id="view-discover">
+        <div class="dhead">
+          <h2 id="d-head"></h2>
+          <p data-i18n="d_sub"></p>
+          <div class="fpills" id="fpills"></div>
+        </div>
         <div id="deck" class="deck"></div>
       </section>
 
       <!-- 2: she/he liked me -->
       <section class="view" id="view-likes">
         <div>
-          <span class="idx">02</span>
           <div class="section-title" data-i18n="l_title"></div>
-          <span class="freebar"><span id="likes-free"></span></span>
+          <span class="freebar">✦ <span id="likes-free"></span></span>
         </div>
         <div class="lgrid" id="lgrid"></div>
       </section>
@@ -131,7 +129,6 @@
       <!-- 3: meet when & where -->
       <section class="view" id="view-meet">
         <div>
-          <span class="idx">03</span>
           <div class="section-title" data-i18n="meet_title"></div>
           <div class="section-sub" data-i18n="meet_sub"></div>
         </div>
@@ -141,7 +138,6 @@
       <!-- 4: my dates -->
       <section class="view" id="view-dates">
         <div>
-          <span class="idx">04</span>
           <div class="section-title" data-i18n="tab_dates"></div>
         </div>
         <div id="dlists"></div>
@@ -150,18 +146,22 @@
 
     <nav class="tabbar">
       <button class="tab active" data-tab="discover">
-        <span class="tnum">01</span><span data-i18n="tab_discover"></span>
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/><circle cx="19.5" cy="6" r="1.6" fill="currentColor" stroke="none"/></svg>
+        <span data-i18n="tab_discover"></span>
       </button>
       <button class="tab" data-tab="likes">
-        <span class="tnum">02</span><span data-i18n="tab_likes"></span>
+        <svg viewBox="0 0 24 24"><path d="M12 20.5C5.5 16 3.6 11.5 5 8.4 6 6.2 8.6 5.2 10.7 6.3c.6.3 1 .7 1.3 1.2.3-.5.7-.9 1.3-1.2 2.1-1.1 4.7-.1 5.7 2.1 1.4 3.1-.5 7.6-7 12.1z"/></svg>
+        <span data-i18n="tab_likes"></span>
         <span class="badge hidden" id="badge-likes"></span>
       </button>
       <button class="tab" data-tab="meet">
-        <span class="tnum">03</span><span data-i18n="tab_meet"></span>
+        <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
+        <span data-i18n="tab_meet"></span>
         <span class="badge hidden" id="badge-meet"></span>
       </button>
       <button class="tab" data-tab="dates">
-        <span class="tnum">04</span><span data-i18n="tab_dates"></span>
+        <svg viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 016.5 6h11A2.5 2.5 0 0120 8.5v1a2.5 2.5 0 000 5v1a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 014 15.5v-1a2.5 2.5 0 000-5z"/><path d="M14 6v12" stroke-dasharray="2.4 2.6"/></svg>
+        <span data-i18n="tab_dates"></span>
       </button>
     </nav>
   </div>

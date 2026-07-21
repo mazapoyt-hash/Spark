@@ -1,6 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-<rect width="64" height="64" fill="#f4efe5"/>
-<rect x="5" y="5" width="54" height="54" fill="none" stroke="#191610" stroke-width="3"/>
-<path transform="translate(34,36)" fill="#191610" d="M0 12 C-14 2 -13 -9 -6.5 -9 C-2.5 -9 0 -5.5 0 -3 C0 -5.5 2.5 -9 6.5 -9 C13 -9 14 2 0 12 Z"/>
-<path transform="translate(32,34)" fill="#e0421b" d="M0 12 C-14 2 -13 -9 -6.5 -9 C-2.5 -9 0 -5.5 0 -3 C0 -5.5 2.5 -9 6.5 -9 C13 -9 14 2 0 12 Z"/>
+<defs>
+<radialGradient id="g" cx="0.5" cy="0.42" r="0.6">
+<stop offset="0" stop-color="#7c3aed" stop-opacity="0.9"/>
+<stop offset="1" stop-color="#0a0810" stop-opacity="0"/>
+</radialGradient>
+<linearGradient id="h" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#c68cff"/>
+<stop offset="1" stop-color="#7c3aed"/>
+</linearGradient>
+</defs>
+<rect width="64" height="64" rx="15" fill="#0b0912"/>
+<circle cx="32" cy="30" r="30" fill="url(#g)"/>
+<path transform="translate(32,35)" fill="url(#h)" d="M0 13 C-16 2 -15 -11 -7 -11 C-2.5 -11 0 -6 0 -3.5 C0 -6 2.5 -11 7 -11 C15 -11 16 2 0 13 Z"/>
 </svg>
