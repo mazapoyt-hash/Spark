@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>DATE ME — real dates, no chats</title>
+  <meta name="description" content="No swipes, no endless chats. See who's online nearby, see who liked you for free, and schedule a real date in 5 questions.">
+  <meta name="theme-color" content="#050506">
+
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="DATE ME">
+
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- ============ onboarding ============ -->
+  <div id="onboarding" class="hidden">
+
+    <section id="ob-welcome" class="ob">
+      <div class="ob-hero">
+        <div class="heart-big">♥</div>
+        <div class="pre" data-i18n="ob_welcome">Welcome to</div>
+        <h1 class="logo">DATE&nbsp;ME</h1>
+        <div class="tagline" data-i18n="tagline">Real dates. No chats.</div>
+      </div>
+      <ul class="pitch">
+        <li><span class="pi">01</span><span data-i18n="ob_pitch_1"></span></li>
+        <li><span class="pi">02</span><span data-i18n="ob_pitch_2"></span></li>
+        <li><span class="pi">03</span><span data-i18n="ob_pitch_3"></span></li>
+        <li><span class="pi">04</span><span data-i18n="ob_pitch_4"></span></li>
+      </ul>
+      <button class="btn btn-primary" id="ob-start"><span data-i18n="ob_start"></span> →</button>
+    </section>
+
+    <section id="ob-form" class="ob hidden">
+      <div class="ob-form">
+        <div class="ob-title" data-i18n="ob_profile_title"></div>
+        <p class="ob-sub" data-i18n="ob_profile_sub"></p>
+
+        <div class="row2">
+          <div class="field">
+            <label data-i18n="ob_name"></label>
+            <input class="input" id="f-name" maxlength="24" data-i18n-ph="ob_name_ph" autocomplete="off">
+          </div>
+          <div class="field">
+            <label data-i18n="ob_age"></label>
+            <input class="input" id="f-age" type="number" min="18" max="99" placeholder="25">
+          </div>
+        </div>
+
+        <div class="field">
+          <label data-i18n="ob_i_am"></label>
+          <div class="seg" id="f-gender">
+            <button type="button" class="chip" data-v="w" data-i18n="g_woman"></button>
+            <button type="button" class="chip" data-v="m" data-i18n="g_man"></button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label data-i18n="ob_looking"></label>
+          <div class="seg" id="f-looking">
+            <button type="button" class="chip" data-v="w" data-i18n="lf_women"></button>
+            <button type="button" class="chip" data-v="m" data-i18n="lf_men"></button>
+            <button type="button" class="chip" data-v="all" data-i18n="lf_all"></button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label data-i18n="ob_langs"></label>
+          <div class="chips" id="f-langs"></div>
+        </div>
+
+        <div class="field">
+          <label data-i18n="ob_photo_title"></label>
+          <div class="photo-pick">
+            <div class="ph"><img id="f-photo-img" alt=""></div>
+            <div>
+              <button type="button" class="btn btn-ghost btn-sm" id="f-photo-btn"></button>
+              <div class="photo-note" data-i18n="ob_photo_skip"></div>
+            </div>
+          </div>
+          <input type="file" id="f-photo-file" accept="image/*" class="hidden">
+        </div>
+
+        <div class="err" id="f-err"></div>
+        <button class="btn btn-primary" id="f-submit"></button>
+      </div>
+    </section>
+  </div>
+
+  <div id="verify" class="verify hidden"></div>
+
+  <!-- ============ main app ============ -->
+  <div id="main" class="app hidden">
+    <header class="hdr">
+      <span class="logo">DATE&nbsp;ME</span>
+      <span class="hdr-online"><i class="dot"></i><span id="online-count"></span></span>
+      <button class="avatar-btn" id="btn-settings" aria-label="Settings">
+        <img id="me-avatar" alt="">
+      </button>
+    </header>
+
+    <main>
+      <!-- 1: I like her/him -->
+      <section class="view active" id="view-discover">
+        <div class="dhead">
+          <h2 id="d-head"></h2>
+          <p data-i18n="d_sub"></p>
+          <div class="fpills" id="fpills"></div>
+        </div>
+        <div id="deck" class="deck"></div>
+      </section>
+
+      <!-- 2: she/he liked me -->
+      <section class="view" id="view-likes">
+        <div>
+          <div class="section-title" data-i18n="l_title"></div>
+          <span class="freebar">✦ <span id="likes-free"></span></span>
+        </div>
+        <div class="lgrid" id="lgrid"></div>
+      </section>
+
+      <!-- 3: meet when & where -->
+      <section class="view" id="view-meet">
+        <div>
+          <div class="section-title" data-i18n="meet_title"></div>
+          <div class="section-sub" data-i18n="meet_sub"></div>
+        </div>
+        <div class="mlist" id="mlist"></div>
+      </section>
+
+      <!-- 4: my dates -->
+      <section class="view" id="view-dates">
+        <div>
+          <div class="section-title" data-i18n="tab_dates"></div>
+        </div>
+        <div id="dlists"></div>
+      </section>
+    </main>
+
+    <nav class="tabbar">
+      <button class="tab active" data-tab="discover">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/><circle cx="19.5" cy="6" r="1.6" fill="currentColor" stroke="none"/></svg>
+        <span data-i18n="tab_discover"></span>
+      </button>
+      <button class="tab" data-tab="likes">
+        <svg viewBox="0 0 24 24"><path d="M12 20.5C5.5 16 3.6 11.5 5 8.4 6 6.2 8.6 5.2 10.7 6.3c.6.3 1 .7 1.3 1.2.3-.5.7-.9 1.3-1.2 2.1-1.1 4.7-.1 5.7 2.1 1.4 3.1-.5 7.6-7 12.1z"/></svg>
+        <span data-i18n="tab_likes"></span>
+        <span class="badge hidden" id="badge-likes"></span>
+      </button>
+      <button class="tab" data-tab="meet">
+        <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
+        <span data-i18n="tab_meet"></span>
+        <span class="badge hidden" id="badge-meet"></span>
+      </button>
+      <button class="tab" data-tab="dates">
+        <svg viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 016.5 6h11A2.5 2.5 0 0120 8.5v1a2.5 2.5 0 000 5v1a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 014 15.5v-1a2.5 2.5 0 000-5z"/><path d="M14 6v12" stroke-dasharray="2.4 2.6"/></svg>
+        <span data-i18n="tab_dates"></span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- sheets / modals / toasts -->
+  <div id="sheet-wizard" class="sheet hidden"></div>
+  <div id="sheet-settings" class="sheet hidden"></div>
+  <div id="match-modal" class="matchwrap hidden"></div>
+  <div id="toasts"></div>
+
+  <script src="js/i18n.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
