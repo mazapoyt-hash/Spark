@@ -158,9 +158,12 @@ main {
   display: flex; flex-direction: column;
   padding: 2px 18px 108px;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
+/* discover fits the screen — no scroll, no drift */
+#view-discover { min-height: 0; overflow: hidden; }
 .view { flex: 1; display: none; flex-direction: column; animation: fadeIn 0.25s ease; }
 .view.active { display: flex; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
@@ -380,11 +383,24 @@ input[type="date"].input, input[type="time"].input { color-scheme: dark; }
 }
 .fpill.static { pointer-events: none; }
 
+/* the orbit is the flexible middle; the deck centers it and caps it so
+   the whole thing always fits the viewport (static, never scrolls) */
+.deck {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  margin-top: 6px;
+}
+.orbit-wrap {
+  flex: 1; min-height: 0; width: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
 .orbit {
   position: relative;
-  width: 100%;
   aspect-ratio: 39 / 46;
-  margin-top: 6px;
+  /* width is set by sizeOrbit() to fit the wrap (never scrolls/overflows) */
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
 }
 .orbit .ring {
   position: absolute;
@@ -990,14 +1006,21 @@ input[type="range"] { flex: 1; accent-color: var(--vio-2); }
 .pmeta-row .mtag.on { color: #7bf2b5; border-color: rgba(52, 211, 153, 0.4); }
 
 /* ---------- map sheet ---------- */
-.map-wrap { position: relative; width: 100%; aspect-ratio: 3 / 2; margin: 6px 0 12px; border-radius: 16px; overflow: hidden; border: 1px solid var(--stroke); }
+.map-wrap { position: relative; width: 100%; aspect-ratio: 3 / 2; margin: 6px 0 10px; border-radius: 16px; overflow: hidden; border: 1px solid var(--stroke); cursor: pointer; }
 .map-wrap .map-fallback { position: absolute; inset: 0; margin: 0; }
-.map-tiles { position: absolute; left: 0; top: 50%; width: 100%; aspect-ratio: 1; transform: translateY(-50%); display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); }
+.map-tiles { position: absolute; inset: 0; }
 .map-tiles.hide { display: none; }
-.map-tiles .mtile { width: 100%; height: 100%; object-fit: cover; display: block; }
-.map-tiles .mmarker { position: absolute; transform: translate(-50%, -100%); font-size: 30px; color: #f43f5e; filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.6)); z-index: 2; pointer-events: none; }
+.map-tiles .mtile { position: absolute; object-fit: cover; display: block; }
+.map-tiles .mmarker { position: absolute; transform: translate(-50%, -100%); font-size: 30px; color: #f43f5e; filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.6)); z-index: 3; pointer-events: none; }
+.map-tiles .memark { position: absolute; transform: translate(-50%, -50%); width: 16px; height: 16px; border-radius: 50%; background: #3b82f6; border: 2.5px solid #fff; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3), 0 2px 4px rgba(0, 0, 0, 0.5); z-index: 2; pointer-events: none; }
+.map-expand { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; border-radius: 9px; background: rgba(0, 0, 0, 0.55); border: 1px solid var(--stroke-2); display: grid; place-items: center; color: #fff; font-size: 14px; z-index: 4; pointer-events: none; }
 .map-fallback { background: radial-gradient(120% 90% at 50% 40%, rgba(124, 58, 237, 0.22), var(--card) 70%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 20px; color: var(--muted); font-size: 13px; }
 .map-fallback .mpin { font-size: 34px; color: var(--lav); }
+.map-legend { display: flex; gap: 16px; margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+.map-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.map-legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+.map-legend .lg-you { background: #3b82f6; border: 2px solid #fff; }
+.map-legend .lg-place { background: #f43f5e; }
 .map-dist { color: var(--muted); font-size: 13.5px; margin-bottom: 12px; display: flex; align-items: center; gap: 7px; }
 .map-dist b { color: var(--text); font-weight: 700; }
 .modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }

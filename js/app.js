@@ -250,6 +250,7 @@ function renderDiscover() {
   const sats = list.filter((x) => x.id !== p.id).slice(0, ORBIT_SLOTS.length);
 
   deck.innerHTML = `
+    <div class="orbit-wrap">
     <div class="orbit">
       <div class="halo"></div>
       <div class="ring r1"></div>
@@ -278,6 +279,7 @@ function renderDiscover() {
         </button>`;
       }).join('')}
     </div>
+    </div>
     <div class="deck-actions">
       <button class="act skip" id="act-skip" aria-label="${esc(t('d_next'))}">${svgIcon('x')}</button>
       <button class="act like" id="act-like" aria-label="${esc(t('d_like'))}">${svgIcon('heart')}</button>
@@ -297,10 +299,32 @@ function renderDiscover() {
     b.onclick = () => { centralId = b.dataset.id; renderDiscover(); };
   });
 
+  sizeOrbit();
+  requestAnimationFrame(sizeOrbit);
+  bindOrbitResize();
+
   if (!APP_STATE.introShown) {
     APP_STATE.introShown = true; save();
     setTimeout(() => toast(t('demo_toast')), 700);
   }
+}
+
+/* size the orbit to fit its deck exactly — static, never scrolls/overflows */
+function sizeOrbit() {
+  const wrap = $('#deck .orbit-wrap');
+  const orbit = wrap && $('.orbit', wrap);
+  if (!orbit) return;
+  const w = wrap.clientWidth;
+  const h = wrap.clientHeight;
+  if (!w || !h) return;
+  const width = Math.min(w, h * (39 / 46));
+  orbit.style.width = Math.floor(width) + 'px';
+}
+let orbitResizeBound = false;
+function bindOrbitResize() {
+  if (orbitResizeBound) return;
+  orbitResizeBound = true;
+  addEventListener('resize', () => { if (currentTab === 'discover') sizeOrbit(); });
 }
 
 function deckAction(id, liked) {
@@ -402,31 +426,81 @@ function haversineKm(a, b) {
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
 }
-const routeKm = (geo) => haversineKm(MY_LOCATION, geo) * 1.3; // rough road factor
+/* real device location (once granted); falls back to the demo anchor */
+let USER_GEO = null;
+let geoAsked = false;
+function ensureGeo(cb) {
+  if (USER_GEO) return cb(USER_GEO);
+  if (!navigator.geolocation) return cb(null);
+  navigator.geolocation.getCurrentPosition(
+    (pos) => { USER_GEO = { lat: pos.coords.latitude, lng: pos.coords.longitude }; cb(USER_GEO); },
+    () => cb(null),
+    { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 },
+  );
+}
+const myLoc = () => USER_GEO || MY_LOCATION;
+/** demo places are anchored around Berlin; when we know the real location
+ *  we shift them by the same vector so distances stay realistic AND the
+ *  route opened in Maps matches the in-app estimate. */
+function placeGeo(name) {
+  const g = PLACE_GEO[name];
+  if (!g) return null;
+  if (!USER_GEO) return { lat: g.lat, lng: g.lng };
+  return { lat: g.lat + (USER_GEO.lat - MY_LOCATION.lat), lng: g.lng + (USER_GEO.lng - MY_LOCATION.lng) };
+}
+
+const routeKm = (geo) => haversineKm(myLoc(), geo) * 1.3; // rough road factor
 function etaMin(km, mode) {
   let m = km / mode.kmh * 60;
   if (mode.id === 'transit') m += 5; // wait / transfer
   return Math.max(1, Math.round(m));
 }
-function mapsLink(geo, mode, name) {
+/** directions link with explicit origin so the opened route matches our ETA */
+function mapsLink(place, me, mode, name) {
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  if (isIOS) return `https://maps.apple.com/?daddr=${geo.lat},${geo.lng}&dirflg=${mode.a}&q=${encodeURIComponent(name)}`;
-  return `https://www.google.com/maps/dir/?api=1&destination=${geo.lat},${geo.lng}&travelmode=${mode.g}`;
+  if (isIOS) return `https://maps.apple.com/?saddr=${me.lat},${me.lng}&daddr=${place.lat},${place.lng}&dirflg=${mode.a}&q=${encodeURIComponent(name)}`;
+  return `https://www.google.com/maps/dir/?api=1&origin=${me.lat},${me.lng}&destination=${place.lat},${place.lng}&travelmode=${mode.g}`;
 }
-/** 3×3 static OSM tiles centred on the place, with a pin. <img> onerror
- *  gives a reliable fallback when tiles can't load (offline). */
-function staticMap(geo) {
-  const z = 15, n = 2 ** z, rad = geo.lat * Math.PI / 180;
-  const fx = (geo.lng + 180) / 360 * n;
-  const fy = (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n;
-  const tx = Math.floor(fx), ty = Math.floor(fy);
-  const ox = (fx - tx) * 256, oy = (fy - ty) * 256;
-  let tiles = '';
-  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-    tiles += `<img class="mtile" src="https://tile.openstreetmap.org/${z}/${tx + dx}/${ty + dy}.png" alt="" loading="lazy">`;
+/** view (not route) link — lets the user open & zoom the place in Maps */
+function mapsViewLink(place, name) {
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (isIOS) return `https://maps.apple.com/?ll=${place.lat},${place.lng}&q=${encodeURIComponent(name)}`;
+  return `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`;
+}
+function project(lat, lng, z) {
+  const n = 2 ** z, rad = lat * Math.PI / 180;
+  return {
+    x: (lng + 180) / 360 * n * 256,
+    y: (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n * 256,
+  };
+}
+/** Static OSM tile map fitted to show BOTH the place (pin) and you (dot).
+ *  Logical 300×200 canvas (matches .map-wrap 3/2) → percentage positions.
+ *  <img> onerror gives a reliable fallback when tiles can't load. */
+function staticMap(place, me) {
+  const W = 300, H = 200;
+  let z = 16;
+  for (; z >= 3; z--) {
+    const a = project(place.lat, place.lng, z), b = project(me.lat, me.lng, z);
+    if (Math.abs(a.x - b.x) < W * 0.6 && Math.abs(a.y - b.y) < H * 0.6) break;
   }
-  const pinL = ((256 + ox) / 768 * 100).toFixed(2), pinT = ((256 + oy) / 768 * 100).toFixed(2);
-  return `<div class="map-tiles">${tiles}<div class="mmarker" style="left:${pinL}%;top:${pinT}%">${svgIcon('pin')}</div></div>`;
+  const pp = project(place.lat, place.lng, z), pm = project(me.lat, me.lng, z);
+  const originX = (pp.x + pm.x) / 2 - W / 2, originY = (pp.y + pm.y) / 2 - H / 2;
+  const t0x = Math.floor(originX / 256), t1x = Math.floor((originX + W) / 256);
+  const t0y = Math.floor(originY / 256), t1y = Math.floor((originY + H) / 256);
+  const wpct = (256 / W * 100).toFixed(3), hpct = (256 / H * 100).toFixed(3);
+  let tiles = '';
+  for (let ty = t0y; ty <= t1y; ty++) for (let tx = t0x; tx <= t1x; tx++) {
+    const left = ((tx * 256 - originX) / W * 100).toFixed(3);
+    const top = ((ty * 256 - originY) / H * 100).toFixed(3);
+    tiles += `<img class="mtile" style="left:${left}%;top:${top}%;width:${wpct}%;height:${hpct}%" src="https://tile.openstreetmap.org/${z}/${tx}/${ty}.png" alt="" loading="lazy">`;
+  }
+  const mark = (p, cls, inner) => {
+    const px = project(p.lat, p.lng, z);
+    const l = ((px.x - originX) / W * 100).toFixed(2), t = ((px.y - originY) / H * 100).toFixed(2);
+    return `<div class="${cls}" style="left:${l}%;top:${t}%">${inner}</div>`;
+  };
+  return `<div class="map-tiles">${tiles}${mark(me, 'memark', '')}${mark(place, 'mmarker', svgIcon('pin'))}</div>`;
 }
 
 let mapMode = 'transit';
@@ -434,7 +508,8 @@ function placeTag(name) {
   return `<span class="ptag" data-map="${esc(name)}">${svgIcon('pin')} ${esc(name)}</span>`;
 }
 function openPlaceMap(name) {
-  const geo = PLACE_GEO[name];
+  const geo = placeGeo(name);
+  const me = myLoc();
   const s = $('#sheet-map');
   const km = geo ? routeKm(geo) : null;
   const curMode = TRAVEL_MODES.find((m) => m.id === mapMode) || TRAVEL_MODES[0];
@@ -444,17 +519,19 @@ function openPlaceMap(name) {
         <span class="met">${esc(t('eta_min', { n: etaMin(km, m) }))}</span>
         <span class="ml">${esc(t('mode_' + m.id))}</span>
       </button>`).join('')}</div>` : '';
-  const openHref = geo ? mapsLink(geo, curMode, name)
+  const openHref = geo ? mapsLink(geo, me, curMode, name)
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}`;
   s.innerHTML = `
     <div class="sheet-card">
       <div class="grab"></div>
       <div class="sheet-head"><div class="sheet-title">${svgIcon('pin')} ${esc(name)}</div>
         <button class="icon-btn" id="mp-close">${svgIcon('x')}</button></div>
-      <div class="map-wrap">
+      <div class="map-wrap" id="mp-wrap">
         <div class="map-fallback"><div class="mpin">${svgIcon('pin')}</div><div>${esc(geo ? t('map_offline') : name)}</div></div>
-        ${geo ? staticMap(geo) : ''}
+        ${geo ? staticMap(geo, me) : ''}
+        ${geo ? `<div class="map-expand">${svgIcon('expand')}</div>` : ''}
       </div>
+      ${geo ? `<div class="map-legend"><span><i class="lg-you"></i>${esc(t('map_you'))}</span><span><i class="lg-place"></i>${esc(name)}</span></div>` : ''}
       ${geo ? `<div class="map-dist">${svgIcon('route')} <b>${esc(t('d_km', { km: km.toFixed(1).replace('.0', '') }))}</b> ${esc(t('map_from_you'))}</div>` : ''}
       <div class="section-sub" style="margin-bottom:8px">${esc(t('map_title'))}</div>
       ${modesHTML}
@@ -465,9 +542,17 @@ function openPlaceMap(name) {
   $('#mp-close').onclick = close;
   s.onclick = (e) => { if (e.target === s) close(); };
   $$('.mode', s).forEach((b) => { b.onclick = () => { mapMode = b.dataset.m; openPlaceMap(name); }; });
+  // tap the preview to open & zoom the place in the real Maps app
+  const wrap = $('#mp-wrap');
+  if (wrap && geo) wrap.onclick = () => window.open(mapsViewLink(geo, name), '_blank', 'noopener');
   // if any tile fails to load (offline), drop the tile layer -> styled fallback shows
   const tilesEl = $('.map-tiles', s);
   if (tilesEl) $$('.mtile', tilesEl).forEach((im) => { im.onerror = () => tilesEl.classList.add('hide'); });
+  // ask for real location once; re-render with it so ETA & route match reality
+  if (!geoAsked) {
+    geoAsked = true;
+    ensureGeo((g) => { if (g && !$('#sheet-map').classList.contains('hidden')) openPlaceMap(name); });
+  }
 }
 
 /* delegate: any element with data-map opens the place map */
