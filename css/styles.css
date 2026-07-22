@@ -54,6 +54,9 @@ img { display: block; }
 
 .hidden { display: none !important; }
 
+/* inline svg icons inherit color & size from context */
+.ic { width: 1em; height: 1em; display: inline-block; vertical-align: -0.14em; flex: none; }
+
 /* ---------- app shell ---------- */
 .app {
   max-width: 480px;
@@ -184,7 +187,7 @@ main {
   font-size: 10.5px; font-weight: 600;
   transition: color 0.2s;
 }
-.tab svg { width: 23px; height: 23px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tab svg:not(.ic) { width: 23px; height: 23px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .tab.active { color: var(--lav); }
 .tab.active svg { filter: drop-shadow(0 0 7px rgba(192, 132, 252, 0.8)); }
 .tab:active { transform: scale(0.94); }
@@ -469,7 +472,7 @@ input[type="date"].input, input[type="time"].input { color-scheme: dark; }
   color: #fff; font-size: 15px; font-weight: 800;
   transition: transform 0.15s;
 }
-.ccard .cbtn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ccard .cbtn svg:not(.ic) { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .ccard .cbtn:active { transform: scale(0.88); }
 .ccard.leave-like { animation: flyRight 0.45s ease forwards; }
 .ccard.leave-skip { animation: flyLeft 0.4s ease forwards; }
@@ -529,7 +532,7 @@ input[type="date"].input, input[type="time"].input { color-scheme: dark; }
   font-size: 22px;
   transition: transform 0.15s;
 }
-.act svg { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.act svg:not(.ic) { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .act:active { transform: scale(0.88); }
 .act.like {
   width: 82px; height: 82px;
@@ -992,9 +995,9 @@ input[type="range"] { flex: 1; accent-color: var(--vio-2); }
 .map-tiles { position: absolute; left: 0; top: 50%; width: 100%; aspect-ratio: 1; transform: translateY(-50%); display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); }
 .map-tiles.hide { display: none; }
 .map-tiles .mtile { width: 100%; height: 100%; object-fit: cover; display: block; }
-.map-tiles .mmarker { position: absolute; transform: translate(-50%, -100%); font-size: 28px; filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.6)); z-index: 2; pointer-events: none; }
+.map-tiles .mmarker { position: absolute; transform: translate(-50%, -100%); font-size: 30px; color: #f43f5e; filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.6)); z-index: 2; pointer-events: none; }
 .map-fallback { background: radial-gradient(120% 90% at 50% 40%, rgba(124, 58, 237, 0.22), var(--card) 70%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 20px; color: var(--muted); font-size: 13px; }
-.map-fallback .mpin { font-size: 34px; }
+.map-fallback .mpin { font-size: 34px; color: var(--lav); }
 .map-dist { color: var(--muted); font-size: 13.5px; margin-bottom: 12px; display: flex; align-items: center; gap: 7px; }
 .map-dist b { color: var(--text); font-weight: 700; }
 .modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }

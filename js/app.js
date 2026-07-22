@@ -59,6 +59,36 @@ const save = () => localStorage.setItem(LS_KEY, JSON.stringify(APP_STATE));
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/* ---------------- inline SVG icons (no emoji) ---------------- */
+const ICONS = {
+  x: ['o', '<path d="M6 6l12 12M18 6L6 18"/>'],
+  check: ['o', '<path d="M4.5 12.5l5 5 10-11"/>'],
+  heart: ['s', '<path d="M12 21C5.6 16.6 3 12.5 3 8.9 3 6.1 5.2 4 7.7 4c1.7 0 3.2.9 4.3 2.5C13.1 4.9 14.6 4 16.3 4 18.8 4 21 6.1 21 8.9c0 3.6-2.6 7.7-9 12.1z"/>'],
+  sparkle: ['s', '<path d="M12 2l1.7 6.1c.2.6.6 1 1.2 1.2L21 11l-6.1 1.7c-.6.2-1 .6-1.2 1.2L12 20l-1.7-6.1c-.2-.6-.6-1-1.2-1.2L3 11l6.1-1.7c.6-.2 1-.6 1.2-1.2z"/>'],
+  pin: ['s', '<path fill-rule="evenodd" clip-rule="evenodd" d="M12 2a7 7 0 00-7 7c0 4.7 5.4 10.6 6.3 11.5a1 1 0 001.4 0C13.6 19.6 19 13.7 19 9a7 7 0 00-7-7zm0 4.6A2.4 2.4 0 1012 11.4 2.4 2.4 0 0012 6.6z"/>'],
+  globe: ['o', '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.8 3.3 2.8 14.7 0 18M12 3c-2.8 3.3-2.8 14.7 0 18"/>'],
+  route: ['o', '<circle cx="6.5" cy="17.5" r="2.2"/><circle cx="17.5" cy="6.5" r="2.2"/><path d="M8.2 15.8 15.8 8.2" stroke-dasharray="2 2.4"/>'],
+  compass: ['o', '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2.2 4.8-4.8 2.2 2.2-4.8z"/>'],
+  walk: ['o', '<circle cx="13" cy="4.3" r="1.7"/><path d="M13 8.6l-2.4 4.2 2.9 2 1.1 5M10.6 12.8 7.4 14.6M15.5 14.8l2.9 1"/>'],
+  bike: ['o', '<circle cx="5.6" cy="16.4" r="3.2"/><circle cx="18.4" cy="16.4" r="3.2"/><path d="M5.6 16.4l4.6-6.4h4.2M12 7.6h3.6l2.8 8.8M9 10h6"/>'],
+  transit: ['o', '<rect x="6" y="3.5" width="12" height="13.5" rx="3"/><path d="M6.5 11.5h11M9 3.7V2.6h6v1.1M8.5 21l2-3.6M15.5 21l-2-3.6"/>'],
+  car: ['o', '<path d="M3.6 14.6l1.6-4.7A2.5 2.5 0 017.6 8.2h8.8a2.5 2.5 0 012.4 1.7l1.6 4.7M4 14.6h16v3.4H4z"/><circle cx="7.6" cy="18" r="1.5"/><circle cx="16.4" cy="18" r="1.5"/>'],
+  envelope: ['o', '<rect x="3.5" y="5.5" width="17" height="13" rx="2.5"/><path d="M4.5 7.5l7.5 5.5 7.5-5.5"/>'],
+  expand: ['o', '<path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/>'],
+  info: ['o', '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.4"/><circle cx="12" cy="7.9" r="1" fill="currentColor" stroke="none"/>'],
+  shuffle: ['o', '<path d="M17 4l3 3-3 3M17 14l3 3-3 3M4 7h4.5c3.5 0 5 10 8.5 10H20M4 17h4.5c1.6 0 2.8-2 3.7-4.2"/>'],
+  plus: ['o', '<path d="M12 5v14M5 12h14"/>'],
+};
+function svgIcon(name, cls = '') {
+  const ic = ICONS[name];
+  if (!ic) return '';
+  const [kind, body] = ic;
+  const paint = kind === 's'
+    ? 'fill="currentColor" stroke="none"'
+    : 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+  return `<svg class="ic ${cls}" viewBox="0 0 24 24" ${paint} aria-hidden="true">${body}</svg>`;
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pickOf = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -97,7 +127,7 @@ function heartBurst(x, y, n = 12) {
   for (let i = 0; i < n; i++) {
     const s = document.createElement('span');
     s.className = 'burst' + (i % 3 === 2 ? ' ink' : '');
-    s.textContent = '♥';
+    s.innerHTML = svgIcon('heart');
     s.style.left = x + 'px';
     s.style.top = y + 'px';
     s.style.setProperty('--dx', rnd(-130, 130) + 'px');
@@ -201,7 +231,7 @@ function orbitList() {
 function renderDiscover() {
   $('#d-head').innerHTML = esc(t('d_head')).replace('{', '<em>').replace('}', '</em>');
   $('#fpills').innerHTML = `
-    <button class="fpill ${discoverFilter === 'all' ? 'on' : ''}" data-f="all">✦ ${esc(t('f_all'))}</button>
+    <button class="fpill ${discoverFilter === 'all' ? 'on' : ''}" data-f="all">${svgIcon('sparkle')} ${esc(t('f_all'))}</button>
     <button class="fpill ${discoverFilter === 'near' ? 'on' : ''}" data-f="near">${esc(t('f_near'))}</button>
     <span class="fpill static"><i class="dot"></i>${onlineNearby()} ${esc(t('d_online'))}</span>`;
   $$('#fpills .fpill[data-f]').forEach((b) => {
@@ -211,7 +241,7 @@ function renderDiscover() {
   const deck = $('#deck');
   const list = orbitList();
   if (!list.length) {
-    deck.innerHTML = `<div class="empty"><div class="eico">✦</div>
+    deck.innerHTML = `<div class="empty"><div class="eico">${svgIcon('sparkle')}</div>
       <h3>${esc(t('d_empty_title'))}</h3><p>${esc(t('d_empty_sub', { km: APP_STATE.profile.radiusKm }))}</p></div>`;
     return;
   }
@@ -230,7 +260,7 @@ function renderDiscover() {
           <img src="${avatar(p)}" alt="${esc(p.name)}">
           <div class="cfade"></div>
           <div class="cinfo">
-            <div class="cname">${esc(p.name)}, ${p.age} <span class="vbadge">✓</span></div>
+            <div class="cname">${esc(p.name)}, ${p.age} <span class="vbadge">${svgIcon('check')}</span></div>
             <div class="ckm"><i class="dot"></i> ${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))} ${esc(t('map_from_you'))}</div>
             <div class="cbtns">
               <button class="cbtn" id="cc-info" aria-label="${esc(t('info_view'))}">
@@ -244,13 +274,13 @@ function renderDiscover() {
         const sl = ORBIT_SLOTS[i];
         return `<button class="oav" data-id="${s.id}" aria-label="${esc(s.name)}"
           style="--x:${sl.x}%;--y:${sl.y}%;--s:${sl.s}px">
-          <img src="${avatar(s)}" alt=""><i class="spark">✦</i>
+          <img src="${avatar(s)}" alt=""><i class="spark">${svgIcon('sparkle')}</i>
         </button>`;
       }).join('')}
     </div>
     <div class="deck-actions">
-      <button class="act skip" id="act-skip" aria-label="${esc(t('d_next'))}">✕</button>
-      <button class="act like" id="act-like" aria-label="${esc(t('d_like'))}">♥</button>
+      <button class="act skip" id="act-skip" aria-label="${esc(t('d_next'))}">${svgIcon('x')}</button>
+      <button class="act like" id="act-like" aria-label="${esc(t('d_like'))}">${svgIcon('heart')}</button>
       <button class="act shuf" id="act-shuf" aria-label="${esc(t('d_shuffle'))}">
         <svg viewBox="0 0 24 24"><path d="M20 5v5h-5"/><path d="M20 10a8 8 0 10 2 5.3"/></svg>
       </button>
@@ -306,7 +336,7 @@ function openGallery(images, start = 0) {
     v.innerHTML = `
       <div class="vtop">
         <span class="vcount">${i + 1} / ${images.length}</span>
-        <button class="icon-btn" id="gv-close">✕</button>
+        <button class="icon-btn" id="gv-close">${svgIcon('x')}</button>
       </div>
       <div class="vstage">
         ${images.length > 1 ? '<button class="vnav prev" id="gv-prev">‹</button>' : ''}
@@ -341,21 +371,21 @@ function openProfileSheet(pid) {
       <div class="grab"></div>
       <div class="sheet-head">
         <div class="sheet-title">${esc(t('info_view'))}</div>
-        <button class="icon-btn" id="ps-close">✕</button>
+        <button class="icon-btn" id="ps-close">${svgIcon('x')}</button>
       </div>
       <div class="psheet-hero" id="ps-hero">
         <img src="${photos[0]}" alt="">
         <div class="pfade"></div>
         ${photos.length > 1 ? `<div class="pthumbs">${photos.map((_, k) => `<i class="${k === 0 ? 'on' : ''}"></i>`).join('')}</div>` : ''}
-        <div class="pexpand">⤢</div>
-        <div class="pcap"><div class="pn">${esc(p.name)}, ${p.age} <span class="vbadge">✓</span></div></div>
+        <div class="pexpand">${svgIcon('expand')}</div>
+        <div class="pcap"><div class="pn">${esc(p.name)}, ${p.age} <span class="vbadge">${svgIcon('check')}</span></div></div>
       </div>
       <div class="pmeta-row">
         <span class="mtag ${d.online ? 'on' : ''}"><i class="dot"></i>${esc(d.online ? t('d_online') : t('meet_offline'))}</span>
-        <span class="mtag">📍 ${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))} ${esc(t('map_from_you'))}</span>
+        <span class="mtag">${svgIcon('pin')} ${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))} ${esc(t('map_from_you'))}</span>
       </div>
       <div class="pmeta-row">
-        ${p.langs.map((c) => `<span class="mtag">🗣 ${esc(LANG_NAMES[c] || c)}</span>`).join('')}
+        ${p.langs.map((c) => `<span class="mtag">${svgIcon('globe')} ${esc(LANG_NAMES[c] || c)}</span>`).join('')}
       </div>
     </div>`;
   s.classList.remove('hidden');
@@ -396,12 +426,12 @@ function staticMap(geo) {
     tiles += `<img class="mtile" src="https://tile.openstreetmap.org/${z}/${tx + dx}/${ty + dy}.png" alt="" loading="lazy">`;
   }
   const pinL = ((256 + ox) / 768 * 100).toFixed(2), pinT = ((256 + oy) / 768 * 100).toFixed(2);
-  return `<div class="map-tiles">${tiles}<div class="mmarker" style="left:${pinL}%;top:${pinT}%">📍</div></div>`;
+  return `<div class="map-tiles">${tiles}<div class="mmarker" style="left:${pinL}%;top:${pinT}%">${svgIcon('pin')}</div></div>`;
 }
 
 let mapMode = 'transit';
 function placeTag(name) {
-  return `<span class="ptag" data-map="${esc(name)}">📍 ${esc(name)}</span>`;
+  return `<span class="ptag" data-map="${esc(name)}">${svgIcon('pin')} ${esc(name)}</span>`;
 }
 function openPlaceMap(name) {
   const geo = PLACE_GEO[name];
@@ -410,7 +440,7 @@ function openPlaceMap(name) {
   const curMode = TRAVEL_MODES.find((m) => m.id === mapMode) || TRAVEL_MODES[0];
   const modesHTML = geo ? `<div class="modes">${TRAVEL_MODES.map((m) => `
       <button class="mode ${m.id === mapMode ? 'on' : ''}" data-m="${m.id}">
-        <span class="mi">${m.icon}</span>
+        <span class="mi">${svgIcon(m.icon)}</span>
         <span class="met">${esc(t('eta_min', { n: etaMin(km, m) }))}</span>
         <span class="ml">${esc(t('mode_' + m.id))}</span>
       </button>`).join('')}</div>` : '';
@@ -419,16 +449,16 @@ function openPlaceMap(name) {
   s.innerHTML = `
     <div class="sheet-card">
       <div class="grab"></div>
-      <div class="sheet-head"><div class="sheet-title">📍 ${esc(name)}</div>
-        <button class="icon-btn" id="mp-close">✕</button></div>
+      <div class="sheet-head"><div class="sheet-title">${svgIcon('pin')} ${esc(name)}</div>
+        <button class="icon-btn" id="mp-close">${svgIcon('x')}</button></div>
       <div class="map-wrap">
-        <div class="map-fallback"><div class="mpin">📍</div><div>${esc(geo ? t('map_offline') : name)}</div></div>
+        <div class="map-fallback"><div class="mpin">${svgIcon('pin')}</div><div>${esc(geo ? t('map_offline') : name)}</div></div>
         ${geo ? staticMap(geo) : ''}
       </div>
-      ${geo ? `<div class="map-dist">📏 <b>${esc(t('d_km', { km: km.toFixed(1).replace('.0', '') }))}</b> ${esc(t('map_from_you'))}</div>` : ''}
+      ${geo ? `<div class="map-dist">${svgIcon('route')} <b>${esc(t('d_km', { km: km.toFixed(1).replace('.0', '') }))}</b> ${esc(t('map_from_you'))}</div>` : ''}
       <div class="section-sub" style="margin-bottom:8px">${esc(t('map_title'))}</div>
       ${modesHTML}
-      <a class="btn btn-primary" id="mp-open" href="${openHref}" target="_blank" rel="noopener">🧭 ${esc(t('map_open'))}</a>
+      <a class="btn btn-primary" id="mp-open" href="${openHref}" target="_blank" rel="noopener">${svgIcon('compass')} ${esc(t('map_open'))}</a>
     </div>`;
   s.classList.remove('hidden');
   const close = () => s.classList.add('hidden');
@@ -463,7 +493,7 @@ function openNote(pid) {
         <div class="wz-head">
           <img src="${avatar(p)}" alt="">
           <div><div class="wname">${esc(p.name)}, ${p.age}</div><div class="wstep">${esc(t('note_title'))}</div></div>
-          <button class="icon-btn wz-x" id="nt-close">✕</button>
+          <button class="icon-btn wz-x" id="nt-close">${svgIcon('x')}</button>
         </div>
         <p class="section-sub" style="margin-bottom:14px">${esc(t('note_sub'))}</p>
         ${n && n.mine ? `<div class="note-log">
@@ -508,20 +538,20 @@ function renderLikes() {
   const list = likesList();
   $('#likes-free').textContent = t('l_free');
   if (!list.length) {
-    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="eico">✦</div>
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="eico">${svgIcon('sparkle')}</div>
       <h3>${esc(t('l_empty_title'))}</h3><p>${esc(t('l_empty_sub'))}</p></div>`;
     return;
   }
   grid.innerHTML = list.map((p) => `
     <div class="lcard" data-id="${p.id}">
       <img class="limg" src="${avatar(p)}" alt="${esc(p.name)}">
-      <span class="lheart">♥</span>
+      <span class="lheart">${svgIcon('heart')}</span>
       <div class="lbody">
-        <div class="lname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:16px;height:16px;font-size:9px">✓</span></div>
+        <div class="lname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:16px;height:16px;font-size:9px">${svgIcon('check')}</span></div>
         <div class="lsub">${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))} · ${esc(langList(p.langs))}</div>
         <div class="lbtns">
-          <button class="mini no" title="${esc(t('l_decline'))}">✕</button>
-          <button class="mini yes" title="${esc(t('l_like_back'))}">♥</button>
+          <button class="mini no" title="${esc(t('l_decline'))}">${svgIcon('x')}</button>
+          <button class="mini yes" title="${esc(t('l_like_back'))}">${svgIcon('heart')}</button>
         </div>
       </div>
     </div>`).join('');
@@ -550,11 +580,11 @@ function showMatchModal(id) {
     <div>
       <div class="mm-title">${esc(t('m_title'))}</div>
       <div class="mm-avs"><img src="${myAvatar()}" alt=""><img src="${avatar(p)}" alt=""></div>
-      <div class="mm-heart">♥</div>
+      <div class="mm-heart">${svgIcon('heart')}</div>
       <p class="mm-sub">${esc(t('m_sub', { name: p.name }))}</p>
       <div class="mm-btns">
         <button class="btn btn-primary" id="mm-go">${esc(t('m_schedule'))}</button>
-        <button class="btn btn-ghost" id="mm-msg">✉ ${esc(t('note_open'))}</button>
+        <button class="btn btn-ghost" id="mm-msg">${svgIcon('envelope')} ${esc(t('note_open'))}</button>
         <button class="btn btn-ghost" id="mm-later">${esc(t('m_later'))}</button>
       </div>
     </div>`;
@@ -570,7 +600,7 @@ function renderMeet() {
   const wrap = $('#mlist');
   const list = matchList();
   if (!list.length) {
-    wrap.innerHTML = `<div class="empty"><div class="eico">✦</div>
+    wrap.innerHTML = `<div class="empty"><div class="eico">${svgIcon('sparkle')}</div>
       <h3>${esc(t('meet_empty_title'))}</h3><p>${esc(t('meet_empty_sub'))}</p></div>`;
     return;
   }
@@ -583,11 +613,11 @@ function renderMeet() {
     <div class="mrow ${off ? 'offline' : ''}" data-id="${p.id}">
       <img class="mimg" src="${avatar(p)}" alt="">
       <div class="mtxt">
-        <div class="mname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:16px;height:16px;font-size:9px">✓</span></div>
+        <div class="mname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:16px;height:16px;font-size:9px">${svgIcon('check')}</span></div>
         <div class="msub">${off ? esc(t('meet_offline')) : `<i class="dot"></i> ${esc(t('d_online'))} · ${esc(t('d_km', { km: p.km }))}`}</div>
       </div>
       ${off ? '' : `<div class="macts">
-        <button class="mbtn msg ${sent ? 'sent' : ''}" aria-label="${esc(t('note_open'))}">✉${unread ? '<i class="ndot"></i>' : ''}</button>
+        <button class="mbtn msg ${sent ? 'sent' : ''}" aria-label="${esc(t('note_open'))}">${svgIcon('envelope')}${unread ? '<i class="ndot"></i>' : ''}</button>
         <button class="go">${esc(t('meet_cta'))}</button>
       </div>`}
     </div>`;
@@ -614,7 +644,7 @@ function openWizard(pid) {
       <div class="wz-head">
         <img src="${avatar(p)}" alt="">
         <div><div class="wname">${esc(p.name)}, ${p.age}</div><div class="wstep" id="wz-step"></div></div>
-        <button class="icon-btn wz-x" id="wz-close">✕</button>
+        <button class="icon-btn wz-x" id="wz-close">${svgIcon('x')}</button>
       </div>
       <div class="wz-dots" id="wz-dots">${'<i></i>'.repeat(5)}</div>
       <div class="wz-body" id="wz-body"></div>
@@ -658,7 +688,7 @@ function wzInput(placeholder, suggestions) {
         <input class="input" id="wz-in" maxlength="40" placeholder="${esc(placeholder)}">
         <button class="btn btn-primary btn-sm" id="wz-send">${esc(t('w_q3_send'))}</button>
       </div>
-      <div class="wz-sugg">${suggestions.map((sname) => `<span class="chip pchip" data-pick="${esc(sname)}">${esc(sname)}<span class="pmap" data-map="${esc(sname)}">📍</span></span>`).join('')}</div>`;
+      <div class="wz-sugg">${suggestions.map((sname) => `<span class="chip pchip" data-pick="${esc(sname)}">${esc(sname)}<span class="pmap" data-map="${esc(sname)}">${svgIcon('pin')}</span></span>`).join('')}</div>`;
     const done = (v) => { if (!v.trim()) return; zone.innerHTML = ''; res(v.trim()); };
     $('#wz-send').onclick = () => done($('#wz-in').value);
     $('#wz-in').onkeydown = (e) => { if (e.key === 'Enter') done($('#wz-in').value); };
@@ -728,10 +758,10 @@ function askYesNo(mapName) {
   return new Promise((res) => {
     const zone = wzZone();
     zone.innerHTML = `
-      ${mapName && PLACE_GEO[mapName] ? `<button class="btn btn-ghost btn-sm" data-map="${esc(mapName)}" style="margin-bottom:14px">📍 ${esc(t('map_view'))}</button>` : ''}
+      ${mapName && PLACE_GEO[mapName] ? `<button class="btn btn-ghost btn-sm" data-map="${esc(mapName)}" style="margin-bottom:14px">${svgIcon('pin')} ${esc(t('map_view'))}</button>` : ''}
       <div class="wz-q" style="font-size:17px">${esc(t('w_you_sure'))}</div>
       <div class="seg">
-        <button class="wz-opt" id="yn-no">✕ ${esc(t('w_no'))}</button>
+        <button class="wz-opt" id="yn-no">${svgIcon('x')} ${esc(t('w_no'))}</button>
         <button class="wz-opt hot" id="yn-yes">${esc(t('w_yes'))}</button>
       </div>`;
     $('#yn-yes').onclick = () => { zone.innerHTML = ''; res(true); };
@@ -908,7 +938,7 @@ async function wizardDone(w, p) {
   wzStep(5);
   $('#wz-body').innerHTML = `
     <div class="wz-done">
-      <div class="big">♥</div>
+      <div class="big">${svgIcon('heart')}</div>
       <h3>${esc(t('w_done_title'))}</h3>
       <p>${esc(t('w_done_sub'))}</p>
       <div class="wz-summary">
@@ -942,7 +972,7 @@ function renderDates() {
   const past = dates.filter((d) => new Date(d.dateISO + 'T' + d.time) < Date.now());
 
   if (!dates.length) {
-    wrap.innerHTML = `<div class="empty"><div class="eico">✦</div>
+    wrap.innerHTML = `<div class="empty"><div class="eico">${svgIcon('sparkle')}</div>
       <h3>${esc(t('dt_empty_title'))}</h3><p>${esc(t('dt_empty_sub'))}</p></div>`;
     return;
   }
@@ -953,12 +983,12 @@ function renderDates() {
       <div class="dcard ${isPast ? 'past' : ''}" data-id="${d.id}">
         <img class="dimg" src="${avatar(p)}" alt="">
         <div class="dtxt">
-          <div class="dname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:17px;height:17px;font-size:10px">✓</span></div>
+          <div class="dname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:17px;height:17px;font-size:10px">${svgIcon('check')}</span></div>
           <div class="dline"><span class="klabel">${esc(t('lbl_where'))}</span><span>${placeTag(d.place)} · ${esc(t(d.inside ? 'dt_place_in' : 'dt_place_out'))}</span></div>
           <div class="dline"><span class="klabel">${esc(t('lbl_day'))}</span><span>${esc(fmtDate(d.dateISO))} · <b>${esc(d.time)}</b></span></div>
           ${!isPast && dateWhenLabel(d) ? `<span class="dwhen">${esc(dateWhenLabel(d))}</span>` : ''}
         </div>
-        ${isPast ? '' : `<button class="dx" title="${esc(t('dt_cancel'))}">✕</button>`}
+        ${isPast ? '' : `<button class="dx" title="${esc(t('dt_cancel'))}">${svgIcon('x')}</button>`}
       </div>`;
   };
 
@@ -997,12 +1027,12 @@ function openSettings() {
     <div class="sheet-card">
       <div class="grab"></div>
       <div class="sheet-head"><div class="sheet-title">${esc(t('s_title'))}</div>
-        <button class="icon-btn" id="st-close">✕</button></div>
+        <button class="icon-btn" id="st-close">${svgIcon('x')}</button></div>
 
       <div class="me-card">
         <img src="${myAvatar()}" alt="" id="st-me-photo">
         <div>
-          <div class="mn">${esc(pr.name)}, ${pr.age} <span class="vbadge">✓</span></div>
+          <div class="mn">${esc(pr.name)}, ${pr.age} <span class="vbadge">${svgIcon('check')}</span></div>
           <div class="ml">${esc(langList(pr.langs))}${myPhotos().length > 1 ? ` · ${myPhotos().length} ${esc(t('ph_title')).toLowerCase()}` : ''}</div>
         </div>
       </div>
@@ -1094,7 +1124,7 @@ function openProfileEditor(isFirstRun = false) {
   $$('#f-gender .chip').forEach((c) => c.classList.toggle('on', c.dataset.v === pr.gender));
   $$('#f-looking .chip').forEach((c) => c.classList.toggle('on', c.dataset.v === pr.lookingFor));
   renderLangChips($('#f-langs'), pr.langs);
-  $('#f-submit').innerHTML = isFirstRun ? `✓ ${esc(t('ob_verify'))}` : esc(t('s_save'));
+  $('#f-submit').innerHTML = isFirstRun ? `${svgIcon('check')} ${esc(t('ob_verify'))}` : esc(t('s_save'));
   $('#f-err').textContent = '';
 
   let photos = [...(pr.photos || [])];
@@ -1106,7 +1136,7 @@ function openProfileEditor(isFirstRun = false) {
         <div class="pslot" data-k="${k}">
           <img src="${src}" alt="">
           ${k === 0 ? `<span class="pmain">${esc(t('ph_main'))}</span>` : ''}
-          <button type="button" class="prem" data-rem="${k}" aria-label="remove">✕</button>
+          <button type="button" class="prem" data-rem="${k}" aria-label="remove">${svgIcon('x')}</button>
         </div>`).join('') +
       (photos.length < MAXP ? `<button type="button" class="padd" id="p-add"><span class="plus">+</span>${esc(t('ob_photo_add'))}</button>` : '');
     $('#f-pcount').textContent = `${t('ph_max')} · ${photos.length}/${MAXP}`;
@@ -1139,6 +1169,7 @@ function openProfileEditor(isFirstRun = false) {
     if (!name) { err.textContent = t('err_name'); return; }
     if (!age || age < 18 || age > 99) { err.textContent = t('err_age'); return; }
     if (!langs.length) { err.textContent = t('err_lang'); return; }
+    if (!photos.length) { err.textContent = t('err_photo'); return; }
 
     Object.assign(pr, {
       name, age, langs, photos,
@@ -1168,7 +1199,7 @@ function playVerification(img) {
       </div>`;
     v.classList.remove('hidden');
     setTimeout(() => {
-      v.innerHTML = `<div><div class="vok">✓</div><div class="vtxt">${esc(t('ob_verified'))}</div></div>`;
+      v.innerHTML = `<div><div class="vok">${svgIcon('check')}</div><div class="vtxt">${esc(t('ob_verified'))}</div></div>`;
       setTimeout(() => { v.classList.add('hidden'); res(); }, 1100);
     }, 2300);
   });

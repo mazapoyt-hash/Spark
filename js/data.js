@@ -28,7 +28,7 @@ function avatarDataURI(name, h1, h2) {
 <circle cx="205" cy="96" r="2" fill="hsla(268,90%,80%,0.9)"/>
 <circle cx="60" cy="232" r="1.8" fill="rgba(255,255,255,0.6)"/>
 <text x="120" y="196" font-family="ui-rounded,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif" font-size="150" font-weight="800" fill="rgba(255,255,255,0.95)" text-anchor="middle">${initial}</text>
-<text x="196" y="66" font-size="24" fill="#c084fc" text-anchor="middle">&#10022;</text>
+<path d="M196 38 l3 9 9 3 -9 3 -3 9 -3 -9 -9 -3 9 -3 z" fill="#c084fc"/>
 </svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
@@ -85,10 +85,11 @@ const PLACE_GEO = {
   'Aussichtspunkt': { lat: 52.5290, lng: 13.3777 },
 };
 
-/** travel modes: avg city speed (km/h) + Google/Apple Maps route codes */
+/** travel modes: avg city speed (km/h) + Google/Apple Maps route codes.
+ *  `icon` is an svgIcon() name (rendered by the app, no emoji). */
 const TRAVEL_MODES = [
-  { id: 'walk',    icon: '🚶', kmh: 4.8, g: 'walking',   a: 'w' },
-  { id: 'bike',    icon: '🚲', kmh: 15,  g: 'bicycling', a: 'w' },
-  { id: 'transit', icon: '🚆', kmh: 21,  g: 'transit',   a: 'r' },
-  { id: 'car',     icon: '🚗', kmh: 28,  g: 'driving',   a: 'd' },
+  { id: 'walk',    icon: 'walk',    kmh: 4.8, g: 'walking',   a: 'w' },
+  { id: 'bike',    icon: 'bike',    kmh: 15,  g: 'bicycling', a: 'w' },
+  { id: 'transit', icon: 'transit', kmh: 21,  g: 'transit',   a: 'r' },
+  { id: 'car',     icon: 'car',     kmh: 28,  g: 'driving',   a: 'd' },
 ];
