@@ -78,14 +78,9 @@
 
         <div class="field">
           <label data-i18n="ob_photo_title"></label>
-          <div class="photo-pick">
-            <div class="ph"><img id="f-photo-img" alt=""></div>
-            <div>
-              <button type="button" class="btn btn-ghost btn-sm" id="f-photo-btn"></button>
-              <div class="photo-note" data-i18n="ob_photo_skip"></div>
-            </div>
-          </div>
-          <input type="file" id="f-photo-file" accept="image/*" class="hidden">
+          <div class="pgal" id="f-pgal"></div>
+          <div class="pcount" id="f-pcount"></div>
+          <input type="file" id="f-photo-file" accept="image/*" multiple class="hidden">
         </div>
 
         <div class="err" id="f-err"></div>
@@ -169,6 +164,10 @@
   <!-- sheets / modals / toasts -->
   <div id="sheet-wizard" class="sheet hidden"></div>
   <div id="sheet-settings" class="sheet hidden"></div>
+  <div id="sheet-profile" class="sheet hidden"></div>
+  <div id="sheet-map" class="sheet hidden"></div>
+  <div id="sheet-note" class="sheet hidden"></div>
+  <div id="viewer" class="viewer hidden"></div>
   <div id="match-modal" class="matchwrap hidden"></div>
   <div id="toasts"></div>
 

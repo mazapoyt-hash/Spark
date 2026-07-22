@@ -64,3 +64,31 @@ const PLACE_IDEAS = {
   outside: ['Stadtpark', 'Botanischer Garten', 'Flussufer-Promenade', 'Weihnachtsmarkt', 'Street-Food-Markt', 'Aussichtspunkt'],
 };
 const TIME_IDEAS = ['12:30', '15:00', '17:30', '18:00', '19:00', '20:30'];
+
+/** your (demo) location — used to place the map & estimate travel time */
+const MY_LOCATION = { lat: 52.5170, lng: 13.3889 };
+
+/** real coordinates for every suggested place so any of them can be
+ *  previewed on a map with route estimates (demo: around Berlin). */
+const PLACE_GEO = {
+  'Starbucks': { lat: 52.5219, lng: 13.4132 },
+  'Café Milano': { lat: 52.4995, lng: 13.4246 },
+  'Pizzeria Roma': { lat: 52.5145, lng: 13.3899 },
+  'Sushi Bar Zen': { lat: 52.5323, lng: 13.4145 },
+  'Cinema CityPark': { lat: 52.5065, lng: 13.3320 },
+  'Bowling Center': { lat: 52.4881, lng: 13.3550 },
+  'Stadtpark': { lat: 52.5448, lng: 13.4260 },
+  'Botanischer Garten': { lat: 52.4570, lng: 13.3050 },
+  'Flussufer-Promenade': { lat: 52.5108, lng: 13.4380 },
+  'Weihnachtsmarkt': { lat: 52.5126, lng: 13.3903 },
+  'Street-Food-Markt': { lat: 52.5010, lng: 13.4300 },
+  'Aussichtspunkt': { lat: 52.5290, lng: 13.3777 },
+};
+
+/** travel modes: avg city speed (km/h) + Google/Apple Maps route codes */
+const TRAVEL_MODES = [
+  { id: 'walk',    icon: '🚶', kmh: 4.8, g: 'walking',   a: 'w' },
+  { id: 'bike',    icon: '🚲', kmh: 15,  g: 'bicycling', a: 'w' },
+  { id: 'transit', icon: '🚆', kmh: 21,  g: 'transit',   a: 'r' },
+  { id: 'car',     icon: '🚗', kmh: 28,  g: 'driving',   a: 'd' },
+];

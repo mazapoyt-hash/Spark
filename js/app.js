@@ -17,12 +17,12 @@ function defaultState() {
     introShown: false,
     profile: {
       name: '', age: null, gender: 'm', lookingFor: 'w',
-      langs: [], photo: null, verified: false,
+      langs: [], photos: [], verified: false,
       locale: detectLocale(), radiusKm: 10,
     },
     // dynamic per-person flags
     people: Object.fromEntries(DEMO_PEOPLE.map((p) => [p.id, {
-      online: Math.random() > 0.25, likedMe: false, iLiked: false, declined: false, dateId: null,
+      online: Math.random() > 0.25, likedMe: false, iLiked: false, declined: false, dateId: null, note: null,
     }])),
     dates: [],
     unseen: { likes: 0, meet: 0 },
@@ -37,7 +37,11 @@ function loadState() {
     const d = defaultState();
     // merge so new demo people / fields appear after updates
     s.profile = { ...d.profile, ...(s.profile || {}) };
-    s.people = { ...d.people, ...(s.people || {}) };
+    // migrate single photo -> photos[]
+    if (!Array.isArray(s.profile.photos)) s.profile.photos = [];
+    if (s.profile.photo && !s.profile.photos.length) s.profile.photos = [s.profile.photo];
+    delete s.profile.photo;
+    s.people = Object.fromEntries(Object.entries(d.people).map(([id, base]) => [id, { ...base, ...(s.people?.[id] || {}) }]));
     s.unseen = { ...d.unseen, ...(s.unseen || {}) };
     s.dates = s.dates || [];
     return { ...d, ...s };
@@ -61,7 +65,10 @@ const pickOf = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const dyn = (id) => APP_STATE.people[id];
 const base = (id) => DEMO_BY_ID[id];
 const avatar = (p) => avatarDataURI(p.name, p.hues[0], p.hues[1]);
-const myAvatar = () => APP_STATE.profile.photo || avatarDataURI(APP_STATE.profile.name || 'You', 330, 275);
+const myPhotos = () => (APP_STATE.profile.photos || []);
+const myAvatar = () => myPhotos()[0] || avatarDataURI(APP_STATE.profile.name || 'You', 330, 275);
+/** photos to show for a person (demo people have one generated portrait) */
+const personPhotos = (p) => [avatar(p)];
 
 function fmtDate(iso) {
   const loc = APP_STATE.profile.locale;
@@ -177,9 +184,9 @@ const NEAR_KM = 3;
 
 /* satellite slots around the central card (percent + size px) */
 const ORBIT_SLOTS = [
-  { x: 22, y: 9, s: 70 }, { x: 79, y: 12, s: 76 },
-  { x: 9, y: 44, s: 82 }, { x: 92, y: 40, s: 66 },
-  { x: 18, y: 84, s: 62 }, { x: 85, y: 79, s: 78 },
+  { x: 20, y: 8, s: 66 }, { x: 80, y: 10, s: 72 },
+  { x: 7, y: 42, s: 74 }, { x: 94, y: 38, s: 60 },
+  { x: 16, y: 86, s: 58 }, { x: 86, y: 82, s: 70 },
 ];
 const ORBIT_STARS = [
   [8, 18], [30, 4], [55, 7], [88, 24], [96, 62],
@@ -224,7 +231,12 @@ function renderDiscover() {
           <div class="cfade"></div>
           <div class="cinfo">
             <div class="cname">${esc(p.name)}, ${p.age} <span class="vbadge">✓</span></div>
-            <div class="ckm">${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))} · ${esc(langList(p.langs))}</div>
+            <div class="ckm"><i class="dot"></i> ${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))} ${esc(t('map_from_you'))}</div>
+            <div class="cbtns">
+              <button class="cbtn" id="cc-info" aria-label="${esc(t('info_view'))}">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11.2v4.6"/><circle cx="12" cy="8" r="1.05" fill="currentColor" stroke="none"/></svg>
+              </button>
+            </div>
           </div>
         </div>
       </article>
@@ -250,6 +262,7 @@ function renderDiscover() {
     const others = list.filter((x) => x.id !== p.id);
     if (others.length) { centralId = pickOf(others).id; renderDiscover(); }
   };
+  $('#cc-info').onclick = () => openProfileSheet(p.id);
   $$('.oav', deck).forEach((b) => {
     b.onclick = () => { centralId = b.dataset.id; renderDiscover(); };
   });
@@ -280,6 +293,213 @@ function scheduleLikeBack(id) {
       onMutualLike(id);
     }
   }, rnd(12000, 45000));
+}
+
+/* ---------------- photo viewer ---------------- */
+function openGallery(images, start = 0) {
+  images = (images || []).filter(Boolean);
+  if (!images.length) return;
+  let i = Math.max(0, Math.min(start, images.length - 1));
+  const v = $('#viewer');
+  const close = () => { v.classList.add('hidden'); v.innerHTML = ''; v.ontouchstart = v.ontouchend = null; };
+  const draw = () => {
+    v.innerHTML = `
+      <div class="vtop">
+        <span class="vcount">${i + 1} / ${images.length}</span>
+        <button class="icon-btn" id="gv-close">✕</button>
+      </div>
+      <div class="vstage">
+        ${images.length > 1 ? '<button class="vnav prev" id="gv-prev">‹</button>' : ''}
+        <img src="${images[i]}" alt="">
+        ${images.length > 1 ? '<button class="vnav next" id="gv-next">›</button>' : ''}
+      </div>
+      <div class="vdots">${images.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div>`;
+    $('#gv-close').onclick = close;
+    const pv = $('#gv-prev'), nx = $('#gv-next');
+    if (pv) pv.onclick = () => { i = (i - 1 + images.length) % images.length; draw(); };
+    if (nx) nx.onclick = () => { i = (i + 1) % images.length; draw(); };
+  };
+  v.classList.remove('hidden');
+  v.onclick = (e) => { if (e.target === v) close(); };
+  let sx = 0;
+  v.ontouchstart = (e) => { sx = e.touches[0].clientX; };
+  v.ontouchend = (e) => {
+    const dx = e.changedTouches[0].clientX - sx;
+    if (Math.abs(dx) > 45 && images.length > 1) { i = (i + (dx < 0 ? 1 : -1) + images.length) % images.length; draw(); }
+  };
+  draw();
+}
+
+/* ---------------- profile / info sheet ---------------- */
+function openProfileSheet(pid) {
+  const p = base(pid);
+  const d = dyn(pid);
+  const photos = personPhotos(p);
+  const s = $('#sheet-profile');
+  s.innerHTML = `
+    <div class="sheet-card">
+      <div class="grab"></div>
+      <div class="sheet-head">
+        <div class="sheet-title">${esc(t('info_view'))}</div>
+        <button class="icon-btn" id="ps-close">✕</button>
+      </div>
+      <div class="psheet-hero" id="ps-hero">
+        <img src="${photos[0]}" alt="">
+        <div class="pfade"></div>
+        ${photos.length > 1 ? `<div class="pthumbs">${photos.map((_, k) => `<i class="${k === 0 ? 'on' : ''}"></i>`).join('')}</div>` : ''}
+        <div class="pexpand">⤢</div>
+        <div class="pcap"><div class="pn">${esc(p.name)}, ${p.age} <span class="vbadge">✓</span></div></div>
+      </div>
+      <div class="pmeta-row">
+        <span class="mtag ${d.online ? 'on' : ''}"><i class="dot"></i>${esc(d.online ? t('d_online') : t('meet_offline'))}</span>
+        <span class="mtag">📍 ${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))} ${esc(t('map_from_you'))}</span>
+      </div>
+      <div class="pmeta-row">
+        ${p.langs.map((c) => `<span class="mtag">🗣 ${esc(LANG_NAMES[c] || c)}</span>`).join('')}
+      </div>
+    </div>`;
+  s.classList.remove('hidden');
+  const close = () => s.classList.add('hidden');
+  $('#ps-close').onclick = close;
+  s.onclick = (e) => { if (e.target === s) close(); };
+  $('#ps-hero').onclick = () => openGallery(photos, 0);
+}
+
+/* ---------------- place map + travel time ---------------- */
+function haversineKm(a, b) {
+  const R = 6371, toR = (x) => x * Math.PI / 180;
+  const dLat = toR(b.lat - a.lat), dLng = toR(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const routeKm = (geo) => haversineKm(MY_LOCATION, geo) * 1.3; // rough road factor
+function etaMin(km, mode) {
+  let m = km / mode.kmh * 60;
+  if (mode.id === 'transit') m += 5; // wait / transfer
+  return Math.max(1, Math.round(m));
+}
+function mapsLink(geo, mode, name) {
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (isIOS) return `https://maps.apple.com/?daddr=${geo.lat},${geo.lng}&dirflg=${mode.a}&q=${encodeURIComponent(name)}`;
+  return `https://www.google.com/maps/dir/?api=1&destination=${geo.lat},${geo.lng}&travelmode=${mode.g}`;
+}
+/** 3×3 static OSM tiles centred on the place, with a pin. <img> onerror
+ *  gives a reliable fallback when tiles can't load (offline). */
+function staticMap(geo) {
+  const z = 15, n = 2 ** z, rad = geo.lat * Math.PI / 180;
+  const fx = (geo.lng + 180) / 360 * n;
+  const fy = (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n;
+  const tx = Math.floor(fx), ty = Math.floor(fy);
+  const ox = (fx - tx) * 256, oy = (fy - ty) * 256;
+  let tiles = '';
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    tiles += `<img class="mtile" src="https://tile.openstreetmap.org/${z}/${tx + dx}/${ty + dy}.png" alt="" loading="lazy">`;
+  }
+  const pinL = ((256 + ox) / 768 * 100).toFixed(2), pinT = ((256 + oy) / 768 * 100).toFixed(2);
+  return `<div class="map-tiles">${tiles}<div class="mmarker" style="left:${pinL}%;top:${pinT}%">📍</div></div>`;
+}
+
+let mapMode = 'transit';
+function placeTag(name) {
+  return `<span class="ptag" data-map="${esc(name)}">📍 ${esc(name)}</span>`;
+}
+function openPlaceMap(name) {
+  const geo = PLACE_GEO[name];
+  const s = $('#sheet-map');
+  const km = geo ? routeKm(geo) : null;
+  const curMode = TRAVEL_MODES.find((m) => m.id === mapMode) || TRAVEL_MODES[0];
+  const modesHTML = geo ? `<div class="modes">${TRAVEL_MODES.map((m) => `
+      <button class="mode ${m.id === mapMode ? 'on' : ''}" data-m="${m.id}">
+        <span class="mi">${m.icon}</span>
+        <span class="met">${esc(t('eta_min', { n: etaMin(km, m) }))}</span>
+        <span class="ml">${esc(t('mode_' + m.id))}</span>
+      </button>`).join('')}</div>` : '';
+  const openHref = geo ? mapsLink(geo, curMode, name)
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}`;
+  s.innerHTML = `
+    <div class="sheet-card">
+      <div class="grab"></div>
+      <div class="sheet-head"><div class="sheet-title">📍 ${esc(name)}</div>
+        <button class="icon-btn" id="mp-close">✕</button></div>
+      <div class="map-wrap">
+        <div class="map-fallback"><div class="mpin">📍</div><div>${esc(geo ? t('map_offline') : name)}</div></div>
+        ${geo ? staticMap(geo) : ''}
+      </div>
+      ${geo ? `<div class="map-dist">📏 <b>${esc(t('d_km', { km: km.toFixed(1).replace('.0', '') }))}</b> ${esc(t('map_from_you'))}</div>` : ''}
+      <div class="section-sub" style="margin-bottom:8px">${esc(t('map_title'))}</div>
+      ${modesHTML}
+      <a class="btn btn-primary" id="mp-open" href="${openHref}" target="_blank" rel="noopener">🧭 ${esc(t('map_open'))}</a>
+    </div>`;
+  s.classList.remove('hidden');
+  const close = () => s.classList.add('hidden');
+  $('#mp-close').onclick = close;
+  s.onclick = (e) => { if (e.target === s) close(); };
+  $$('.mode', s).forEach((b) => { b.onclick = () => { mapMode = b.dataset.m; openPlaceMap(name); }; });
+  // if any tile fails to load (offline), drop the tile layer -> styled fallback shows
+  const tilesEl = $('.map-tiles', s);
+  if (tilesEl) $$('.mtile', tilesEl).forEach((im) => { im.onerror = () => tilesEl.classList.add('hide'); });
+}
+
+/* delegate: any element with data-map opens the place map */
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-map]');
+  if (el) { e.preventDefault(); e.stopPropagation(); openPlaceMap(el.dataset.map); }
+});
+
+/* ---------------- icebreaker note ---------------- */
+function notePresets() {
+  const loc = APP_STATE.profile.locale;
+  return (I18N[loc] && I18N[loc].note_presets) || I18N.en.note_presets;
+}
+function openNote(pid) {
+  const p = base(pid);
+  const d = dyn(pid);
+  const s = $('#sheet-note');
+  const draw = () => {
+    const n = d.note;
+    s.innerHTML = `
+      <div class="sheet-card">
+        <div class="grab"></div>
+        <div class="wz-head">
+          <img src="${avatar(p)}" alt="">
+          <div><div class="wname">${esc(p.name)}, ${p.age}</div><div class="wstep">${esc(t('note_title'))}</div></div>
+          <button class="icon-btn wz-x" id="nt-close">✕</button>
+        </div>
+        <p class="section-sub" style="margin-bottom:14px">${esc(t('note_sub'))}</p>
+        ${n && n.mine ? `<div class="note-log">
+            <div class="pb me"><img src="${myAvatar()}" alt=""><div class="bub">${esc(n.mine)}</div></div>
+            ${n.theirs ? `<div class="pb"><img src="${avatar(p)}" alt=""><div class="bub ok">${esc(n.theirs)}</div></div>` : '<div class="pb"><img src="' + avatar(p) + '" alt=""><div class="bub"><span class="tdots"><i></i><i></i><i></i></span></div></div>'}
+          </div>` : ''}
+        <div class="note-presets">${notePresets().map((x) => `<button class="chip npreset">${esc(x)}</button>`).join('')}</div>
+        <div class="note-in">
+          <input class="input" id="nt-in" maxlength="120" placeholder="${esc(t('note_ph', { name: p.name }))}">
+          <button class="btn btn-primary btn-sm" id="nt-send">${esc(n && n.mine ? t('note_edit') : t('note_send'))}</button>
+        </div>
+      </div>`;
+    $('#nt-close').onclick = () => s.classList.add('hidden');
+    s.onclick = (e) => { if (e.target === s) s.classList.add('hidden'); };
+    $$('.npreset', s).forEach((b) => { b.onclick = () => { $('#nt-in').value = b.textContent; $('#nt-in').focus(); }; });
+    $('#nt-send').onclick = () => {
+      const val = $('#nt-in').value.trim();
+      if (!val) return;
+      const firstTime = !(d.note && d.note.mine);
+      d.note = { mine: val, theirs: null, at: Date.now() };
+      save();
+      draw();
+      toast(t('note_sent', { name: p.name }), avatar(p));
+      if (currentTab === 'meet') renderMeet();
+      if (firstTime) setTimeout(() => {
+        if (dyn(pid).note && !dyn(pid).note.theirs) {
+          dyn(pid).note.theirs = t('note_reply');
+          save();
+          if (!$('#sheet-note').classList.contains('hidden')) draw();
+          if (currentTab === 'meet') renderMeet();
+        }
+      }, rnd(2500, 5000));
+    };
+  };
+  s.classList.remove('hidden');
+  draw();
 }
 
 /* ---------------- likes ---------------- */
@@ -334,12 +554,14 @@ function showMatchModal(id) {
       <p class="mm-sub">${esc(t('m_sub', { name: p.name }))}</p>
       <div class="mm-btns">
         <button class="btn btn-primary" id="mm-go">${esc(t('m_schedule'))}</button>
+        <button class="btn btn-ghost" id="mm-msg">✉ ${esc(t('note_open'))}</button>
         <button class="btn btn-ghost" id="mm-later">${esc(t('m_later'))}</button>
       </div>
     </div>`;
   w.classList.remove('hidden');
   heartBurst(innerWidth / 2, innerHeight / 3, 16);
   $('#mm-go').onclick = () => { w.classList.add('hidden'); openWizard(id); };
+  $('#mm-msg').onclick = () => { w.classList.add('hidden'); openNote(id); };
   $('#mm-later').onclick = () => { w.classList.add('hidden'); renderCurrentView(); };
 }
 
@@ -353,7 +575,10 @@ function renderMeet() {
     return;
   }
   wrap.innerHTML = list.map((p) => {
-    const off = !dyn(p.id).online;
+    const d = dyn(p.id);
+    const off = !d.online;
+    const sent = d.note && d.note.mine;
+    const unread = d.note && d.note.theirs;
     return `
     <div class="mrow ${off ? 'offline' : ''}" data-id="${p.id}">
       <img class="mimg" src="${avatar(p)}" alt="">
@@ -361,11 +586,17 @@ function renderMeet() {
         <div class="mname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:16px;height:16px;font-size:9px">✓</span></div>
         <div class="msub">${off ? esc(t('meet_offline')) : `<i class="dot"></i> ${esc(t('d_online'))} · ${esc(t('d_km', { km: p.km }))}`}</div>
       </div>
-      ${off ? '' : `<button class="go">${esc(t('meet_cta'))}</button>`}
+      ${off ? '' : `<div class="macts">
+        <button class="mbtn msg ${sent ? 'sent' : ''}" aria-label="${esc(t('note_open'))}">✉${unread ? '<i class="ndot"></i>' : ''}</button>
+        <button class="go">${esc(t('meet_cta'))}</button>
+      </div>`}
     </div>`;
   }).join('');
-  $$('.mrow .go', wrap).forEach((b) => {
-    b.onclick = () => openWizard(b.closest('.mrow').dataset.id);
+  $$('.mrow', wrap).forEach((row) => {
+    const id = row.dataset.id;
+    $('.mimg', row).onclick = () => openProfileSheet(id);
+    const go = $('.go', row); if (go) go.onclick = () => openWizard(id);
+    const msg = $('.msg', row); if (msg) msg.onclick = () => openNote(id);
   });
 }
 
@@ -427,11 +658,11 @@ function wzInput(placeholder, suggestions) {
         <input class="input" id="wz-in" maxlength="40" placeholder="${esc(placeholder)}">
         <button class="btn btn-primary btn-sm" id="wz-send">${esc(t('w_q3_send'))}</button>
       </div>
-      <div class="wz-sugg">${suggestions.map((s) => `<button class="chip">${esc(s)}</button>`).join('')}</div>`;
+      <div class="wz-sugg">${suggestions.map((sname) => `<span class="chip pchip" data-pick="${esc(sname)}">${esc(sname)}<span class="pmap" data-map="${esc(sname)}">📍</span></span>`).join('')}</div>`;
     const done = (v) => { if (!v.trim()) return; zone.innerHTML = ''; res(v.trim()); };
     $('#wz-send').onclick = () => done($('#wz-in').value);
     $('#wz-in').onkeydown = (e) => { if (e.key === 'Enter') done($('#wz-in').value); };
-    $$('.chip', zone).forEach((c) => { c.onclick = () => done(c.textContent); });
+    $$('.pchip', zone).forEach((c) => { c.onclick = (e) => { if (e.target.closest('[data-map]')) return; done(c.dataset.pick); }; });
   });
 }
 
@@ -493,10 +724,11 @@ async function partnerThinks(w, ms) {
 function partnerSays(text, kind) { partnerBubble(esc(text), kind); }
 
 /** my Yes/No decision on partner's counter-proposal */
-function askYesNo() {
+function askYesNo(mapName) {
   return new Promise((res) => {
     const zone = wzZone();
     zone.innerHTML = `
+      ${mapName && PLACE_GEO[mapName] ? `<button class="btn btn-ghost btn-sm" data-map="${esc(mapName)}" style="margin-bottom:14px">📍 ${esc(t('map_view'))}</button>` : ''}
       <div class="wz-q" style="font-size:17px">${esc(t('w_you_sure'))}</div>
       <div class="seg">
         <button class="wz-opt" id="yn-no">✕ ${esc(t('w_no'))}</button>
@@ -544,13 +776,13 @@ async function runWizard() {
 }
 
 /* partner accepts / counters helper (me-chooser mode) */
-async function partnerConfirm(w, name, pAccept, counterValue, applyCounter) {
+async function partnerConfirm(w, name, pAccept, counterValue, applyCounter, mapName) {
   await partnerThinks(w);
   if (Math.random() < pAccept) { partnerSays(t('w_they_yes', { name }), 'ok'); await sleep(700); wzGuard(w); return; }
   partnerSays(t('w_they_no', { name }), 'nope');
   await partnerThinks(w, rnd(700, 1300));
   partnerSays(t('w_counter', { name, v: counterValue }));
-  const ok = await askYesNo(); wzGuard(w);
+  const ok = await askYesNo(mapName); wzGuard(w);
   if (ok) { meSays(t('w_yes')); applyCounter(); }
   else { meSays(t('w_no')); await partnerThinks(w, rnd(600, 1100)); partnerSays(t('w_they_yes', { name }), 'ok'); }
   await sleep(600); wzGuard(w);
@@ -576,7 +808,7 @@ async function wizardIChoose(w, name) {
   wzGuard(w);
   meSays(w.place);
   const counterPlace = pickOf(pool.filter((x) => x !== w.place));
-  await partnerConfirm(w, name, 0.8, counterPlace, () => { w.place = counterPlace; });
+  await partnerConfirm(w, name, 0.8, counterPlace, () => { w.place = counterPlace; }, counterPlace);
 
   /* Q4 date */
   wzStep(4); wzLogClear();
@@ -599,11 +831,11 @@ async function wizardIChoose(w, name) {
 }
 
 /* partner proposes, I answer yes/no (them-chooser mode) */
-async function theyPropose(w, name, values, applyValue, myPickFallback) {
+async function theyPropose(w, name, values, applyValue, myPickFallback, mapable) {
   for (let i = 0; i < values.length; i++) {
     await partnerThinks(w);
     partnerSays(t('w_counter', { name, v: values[i] }));
-    const ok = await askYesNo(); wzGuard(w);
+    const ok = await askYesNo(mapable ? values[i] : null); wzGuard(w);
     if (ok) { meSays(t('w_yes')); applyValue(values[i], i); await sleep(500); wzGuard(w); return; }
     meSays(t('w_no'));
   }
@@ -636,7 +868,7 @@ async function wizardTheyChoose(w, name) {
     wzQ(t('w_q3'));
     w.place = await wzInput(t('w_q3_ph'), pool.slice(0, 3)); wzGuard(w);
     meSays(w.place);
-  });
+  }, true);
 
   /* Q4 */
   wzStep(4); wzLogClear();
@@ -681,7 +913,7 @@ async function wizardDone(w, p) {
       <p>${esc(t('w_done_sub'))}</p>
       <div class="wz-summary">
         <div class="srow"><span class="klabel">${esc(t('lbl_who'))}</span><b>${esc(p.name)}, ${p.age}</b></div>
-        <div class="srow"><span class="klabel">${esc(t('lbl_where'))}</span><span><b>${esc(w.place)}</b> · ${esc(t(w.inside ? 'dt_place_in' : 'dt_place_out'))}</span></div>
+        <div class="srow"><span class="klabel">${esc(t('lbl_where'))}</span><span>${placeTag(w.place)} · ${esc(t(w.inside ? 'dt_place_in' : 'dt_place_out'))}</span></div>
         <div class="srow"><span class="klabel">${esc(t('lbl_day'))}</span><b>${esc(fmtDate(w.dateISO))}</b></div>
         <div class="srow"><span class="klabel">${esc(t('lbl_time'))}</span><b>${esc(w.time)}</b></div>
       </div>
@@ -722,7 +954,7 @@ function renderDates() {
         <img class="dimg" src="${avatar(p)}" alt="">
         <div class="dtxt">
           <div class="dname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:17px;height:17px;font-size:10px">✓</span></div>
-          <div class="dline"><span class="klabel">${esc(t('lbl_where'))}</span><span><b>${esc(d.place)}</b> · ${esc(t(d.inside ? 'dt_place_in' : 'dt_place_out'))}</span></div>
+          <div class="dline"><span class="klabel">${esc(t('lbl_where'))}</span><span>${placeTag(d.place)} · ${esc(t(d.inside ? 'dt_place_in' : 'dt_place_out'))}</span></div>
           <div class="dline"><span class="klabel">${esc(t('lbl_day'))}</span><span>${esc(fmtDate(d.dateISO))} · <b>${esc(d.time)}</b></span></div>
           ${!isPast && dateWhenLabel(d) ? `<span class="dwhen">${esc(dateWhenLabel(d))}</span>` : ''}
         </div>
@@ -768,18 +1000,18 @@ function openSettings() {
         <button class="icon-btn" id="st-close">✕</button></div>
 
       <div class="me-card">
-        <img src="${myAvatar()}" alt="">
+        <img src="${myAvatar()}" alt="" id="st-me-photo">
         <div>
           <div class="mn">${esc(pr.name)}, ${pr.age} <span class="vbadge">✓</span></div>
-          <div class="ml">${esc(langList(pr.langs))}</div>
+          <div class="ml">${esc(langList(pr.langs))}${myPhotos().length > 1 ? ` · ${myPhotos().length} ${esc(t('ph_title')).toLowerCase()}` : ''}</div>
         </div>
       </div>
 
       <button class="srow-btn" id="st-profile">${esc(t('s_profile'))}<span class="sv">→</span></button>
 
       <div class="srow-btn">${esc(t('s_lang'))}
-        <select class="input" id="st-lang" style="max-width:150px;margin-left:auto;padding:9px 12px">
-          ${['en', 'de', 'ru'].map((l) => `<option value="${l}" ${pr.locale === l ? 'selected' : ''}>${LANG_NAMES[l]}</option>`).join('')}
+        <select class="input" id="st-lang" style="max-width:160px;margin-left:auto;padding:9px 12px">
+          ${['en', 'de', 'ru', 'uk'].map((l) => `<option value="${l}" ${pr.locale === l ? 'selected' : ''}>${LANG_NAMES[l]}</option>`).join('')}
         </select>
       </div>
 
@@ -803,6 +1035,7 @@ function openSettings() {
 
   $('#st-close').onclick = () => s.classList.add('hidden');
   s.onclick = (e) => { if (e.target === s) s.classList.add('hidden'); };
+  $('#st-me-photo').onclick = () => openGallery(myPhotos().length ? myPhotos() : [myAvatar()], 0);
   $('#st-profile').onclick = () => { s.classList.add('hidden'); openProfileEditor(); };
   $('#st-lang').onchange = (e) => {
     APP_STATE.profile.locale = e.target.value; save();
@@ -861,12 +1094,27 @@ function openProfileEditor(isFirstRun = false) {
   $$('#f-gender .chip').forEach((c) => c.classList.toggle('on', c.dataset.v === pr.gender));
   $$('#f-looking .chip').forEach((c) => c.classList.toggle('on', c.dataset.v === pr.lookingFor));
   renderLangChips($('#f-langs'), pr.langs);
-  $('#f-photo-img').src = pr.photo || avatarDataURI(pr.name || '?', 330, 275);
-  $('#f-photo-btn').textContent = t(pr.photo ? 'ob_photo_change' : 'ob_photo_add');
   $('#f-submit').innerHTML = isFirstRun ? `✓ ${esc(t('ob_verify'))}` : esc(t('s_save'));
   $('#f-err').textContent = '';
 
-  let photo = pr.photo;
+  let photos = [...(pr.photos || [])];
+  const MAXP = 5;
+  const drawPhotos = () => {
+    const gal = $('#f-pgal');
+    gal.innerHTML =
+      photos.map((src, k) => `
+        <div class="pslot" data-k="${k}">
+          <img src="${src}" alt="">
+          ${k === 0 ? `<span class="pmain">${esc(t('ph_main'))}</span>` : ''}
+          <button type="button" class="prem" data-rem="${k}" aria-label="remove">✕</button>
+        </div>`).join('') +
+      (photos.length < MAXP ? `<button type="button" class="padd" id="p-add"><span class="plus">+</span>${esc(t('ob_photo_add'))}</button>` : '');
+    $('#f-pcount').textContent = `${t('ph_max')} · ${photos.length}/${MAXP}`;
+    const add = $('#p-add'); if (add) add.onclick = () => $('#f-photo-file').click();
+    $$('.pslot img', gal).forEach((im) => { im.onclick = () => openGallery(photos, +im.closest('.pslot').dataset.k); });
+    $$('.prem', gal).forEach((b) => { b.onclick = (e) => { e.stopPropagation(); photos.splice(+b.dataset.rem, 1); drawPhotos(); }; });
+  };
+  drawPhotos();
 
   $$('#f-gender .chip').forEach((c) => {
     c.onclick = () => { $$('#f-gender .chip').forEach((x) => x.classList.remove('on')); c.classList.add('on'); };
@@ -874,13 +1122,13 @@ function openProfileEditor(isFirstRun = false) {
   $$('#f-looking .chip').forEach((c) => {
     c.onclick = () => { $$('#f-looking .chip').forEach((x) => x.classList.remove('on')); c.classList.add('on'); };
   });
-  $('#f-photo-btn').onclick = () => $('#f-photo-file').click();
   $('#f-photo-file').onchange = async (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    photo = await downscalePhoto(f);
-    $('#f-photo-img').src = photo;
-    $('#f-photo-btn').textContent = t('ob_photo_change');
+    for (const f of [...e.target.files]) {
+      if (photos.length >= MAXP) break;
+      photos.push(await downscalePhoto(f));
+    }
+    e.target.value = '';
+    drawPhotos();
   };
 
   $('#f-submit').onclick = async () => {
@@ -893,13 +1141,13 @@ function openProfileEditor(isFirstRun = false) {
     if (!langs.length) { err.textContent = t('err_lang'); return; }
 
     Object.assign(pr, {
-      name, age, langs, photo,
+      name, age, langs, photos,
       gender: $('#f-gender .chip.on')?.dataset.v || 'm',
       lookingFor: $('#f-looking .chip.on')?.dataset.v || 'all',
     });
 
     if (isFirstRun) {
-      await playVerification(photo || avatarDataURI(name, 330, 275));
+      await playVerification(photos[0] || avatarDataURI(name, 330, 275));
       pr.verified = true;
       APP_STATE.onboarded = true;
       seedInitialLikes();
