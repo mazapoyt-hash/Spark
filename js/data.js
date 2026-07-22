@@ -28,7 +28,7 @@ function avatarDataURI(name, h1, h2) {
 <circle cx="205" cy="96" r="2" fill="hsla(268,90%,80%,0.9)"/>
 <circle cx="60" cy="232" r="1.8" fill="rgba(255,255,255,0.6)"/>
 <text x="120" y="196" font-family="ui-rounded,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif" font-size="150" font-weight="800" fill="rgba(255,255,255,0.95)" text-anchor="middle">${initial}</text>
-<text x="196" y="66" font-size="24" fill="#c084fc" text-anchor="middle">&#10022;</text>
+<path d="M196 38 l3 9 9 3 -9 3 -3 9 -3 -9 -9 -3 9 -3 z" fill="#c084fc"/>
 </svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
@@ -64,3 +64,32 @@ const PLACE_IDEAS = {
   outside: ['Stadtpark', 'Botanischer Garten', 'Flussufer-Promenade', 'Weihnachtsmarkt', 'Street-Food-Markt', 'Aussichtspunkt'],
 };
 const TIME_IDEAS = ['12:30', '15:00', '17:30', '18:00', '19:00', '20:30'];
+
+/** your (demo) location — used to place the map & estimate travel time */
+const MY_LOCATION = { lat: 52.5170, lng: 13.3889 };
+
+/** real coordinates for every suggested place so any of them can be
+ *  previewed on a map with route estimates (demo: around Berlin). */
+const PLACE_GEO = {
+  'Starbucks': { lat: 52.5219, lng: 13.4132 },
+  'Café Milano': { lat: 52.4995, lng: 13.4246 },
+  'Pizzeria Roma': { lat: 52.5145, lng: 13.3899 },
+  'Sushi Bar Zen': { lat: 52.5323, lng: 13.4145 },
+  'Cinema CityPark': { lat: 52.5065, lng: 13.3320 },
+  'Bowling Center': { lat: 52.4881, lng: 13.3550 },
+  'Stadtpark': { lat: 52.5448, lng: 13.4260 },
+  'Botanischer Garten': { lat: 52.4570, lng: 13.3050 },
+  'Flussufer-Promenade': { lat: 52.5108, lng: 13.4380 },
+  'Weihnachtsmarkt': { lat: 52.5126, lng: 13.3903 },
+  'Street-Food-Markt': { lat: 52.5010, lng: 13.4300 },
+  'Aussichtspunkt': { lat: 52.5290, lng: 13.3777 },
+};
+
+/** travel modes: avg city speed (km/h) + Google/Apple Maps route codes.
+ *  `icon` is an svgIcon() name (rendered by the app, no emoji). */
+const TRAVEL_MODES = [
+  { id: 'walk',    icon: 'walk',    kmh: 4.8, g: 'walking',   a: 'w' },
+  { id: 'bike',    icon: 'bike',    kmh: 15,  g: 'bicycling', a: 'w' },
+  { id: 'transit', icon: 'transit', kmh: 21,  g: 'transit',   a: 'r' },
+  { id: 'car',     icon: 'car',     kmh: 28,  g: 'driving',   a: 'd' },
+];
