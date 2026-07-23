@@ -503,6 +503,45 @@ function staticMap(place, me) {
   return `<div class="map-tiles">${tiles}${mark(me, 'memark', '')}${mark(place, 'mmarker', svgIcon('pin'))}</div>`;
 }
 
+/* ---- optional real routing via OpenRouteService (user-provided key) ----
+   With a key + connection we fetch real walk/bike/car times (road distance,
+   elevation-aware) so the estimate matches what Maps shows. Transit has no
+   ORS profile, so it stays a distance estimate. No key/offline → estimate. */
+const ORS_PROFILE = { walk: 'foot-walking', bike: 'cycling-regular', car: 'driving-car' };
+let ORS_KEY = '';
+try { ORS_KEY = localStorage.getItem('dateme.orsKey') || ''; } catch { /* ignore */ }
+const routeCache = new Map();   // `${sig}|${mode}` -> { km, min }
+const routeSettled = new Set(); // signatures whose fetch has finished
+const routeReq = new Set();     // signatures currently/already requested
+const routeSig = (name, me) => `${name}|${me.lat.toFixed(4)},${me.lng.toFixed(4)}`;
+const cachedRoute = (name, me, mode) => routeCache.get(`${routeSig(name, me)}|${mode}`);
+async function fetchRoutes(name, me, geo) {
+  const sig = routeSig(name, me);
+  if (!ORS_KEY || !navigator.onLine || routeReq.has(sig)) return false;
+  routeReq.add(sig);
+  await Promise.allSettled(Object.entries(ORS_PROFILE).map(async ([mode, profile]) => {
+    try {
+      const url = `https://api.openrouteservice.org/v2/directions/${profile}`
+        + `?api_key=${encodeURIComponent(ORS_KEY)}&start=${me.lng},${me.lat}&end=${geo.lng},${geo.lat}`;
+      const r = await fetch(url, { headers: { Accept: 'application/geo+json' } });
+      if (!r.ok) return;
+      const sum = (await r.json())?.features?.[0]?.properties?.summary;
+      if (sum && sum.duration != null) {
+        routeCache.set(`${sig}|${mode}`, { km: sum.distance / 1000, min: Math.max(1, Math.round(sum.duration / 60)) });
+      }
+    } catch { /* keep estimate */ }
+  }));
+  routeSettled.add(sig);
+  return true;
+}
+function fmtEta(min) {
+  if (min >= 60) {
+    const h = Math.floor(min / 60), m = min % 60;
+    return '~' + h + ' ' + t('u_h') + (m ? ' ' + m + ' ' + t('u_min') : '');
+  }
+  return '~' + min + ' ' + t('u_min');
+}
+
 let mapMode = 'transit';
 function placeTag(name) {
   return `<span class="ptag" data-map="${esc(name)}">${svgIcon('pin')} ${esc(name)}</span>`;
@@ -512,13 +551,25 @@ function openPlaceMap(name) {
   const me = myLoc();
   const s = $('#sheet-map');
   const km = geo ? routeKm(geo) : null;
+  const sig = geo ? routeSig(name, me) : '';
+  const loading = geo && !!ORS_KEY && navigator.onLine && !routeSettled.has(sig);
   const curMode = TRAVEL_MODES.find((m) => m.id === mapMode) || TRAVEL_MODES[0];
+  const carRoute = geo ? cachedRoute(name, me, 'car') : null;
+  const metFor = (m) => {
+    const c = ORS_PROFILE[m.id] ? cachedRoute(name, me, m.id) : null;
+    if (c) return fmtEta(c.min);
+    if (ORS_PROFILE[m.id] && loading) return '<span class="tdots"><i></i><i></i><i></i></span>';
+    const baseKm = (m.id === 'transit' && carRoute) ? carRoute.km : km;
+    return fmtEta(etaMin(baseKm, m));
+  };
   const modesHTML = geo ? `<div class="modes">${TRAVEL_MODES.map((m) => `
       <button class="mode ${m.id === mapMode ? 'on' : ''}" data-m="${m.id}">
         <span class="mi">${svgIcon(m.icon)}</span>
-        <span class="met">${esc(t('eta_min', { n: etaMin(km, m) }))}</span>
+        <span class="met">${metFor(m)}</span>
         <span class="ml">${esc(t('mode_' + m.id))}</span>
       </button>`).join('')}</div>` : '';
+  const curRoute = geo && ORS_PROFILE[mapMode] ? cachedRoute(name, me, mapMode) : null;
+  const distKm = curRoute ? curRoute.km : km;
   const openHref = geo ? mapsLink(geo, me, curMode, name)
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}`;
   s.innerHTML = `
@@ -532,7 +583,7 @@ function openPlaceMap(name) {
         ${geo ? `<div class="map-expand">${svgIcon('expand')}</div>` : ''}
       </div>
       ${geo ? `<div class="map-legend"><span><i class="lg-you"></i>${esc(t('map_you'))}</span><span><i class="lg-place"></i>${esc(name)}</span></div>` : ''}
-      ${geo ? `<div class="map-dist">${svgIcon('route')} <b>${esc(t('d_km', { km: km.toFixed(1).replace('.0', '') }))}</b> ${esc(t('map_from_you'))}</div>` : ''}
+      ${geo ? `<div class="map-dist">${svgIcon('route')} <b>${esc(t('d_km', { km: distKm.toFixed(1).replace('.0', '') }))}</b> ${esc(t('map_from_you'))}</div>` : ''}
       <div class="section-sub" style="margin-bottom:8px">${esc(t('map_title'))}</div>
       ${modesHTML}
       <a class="btn btn-primary" id="mp-open" href="${openHref}" target="_blank" rel="noopener">${svgIcon('compass')} ${esc(t('map_open'))}</a>
@@ -548,6 +599,12 @@ function openPlaceMap(name) {
   // if any tile fails to load (offline), drop the tile layer -> styled fallback shows
   const tilesEl = $('.map-tiles', s);
   if (tilesEl) $$('.mtile', tilesEl).forEach((im) => { im.onerror = () => tilesEl.classList.add('hide'); });
+  // fetch real routes once (if a key is set) and re-render with the results
+  if (geo && ORS_KEY && navigator.onLine && !routeSettled.has(sig)) {
+    fetchRoutes(name, me, geo).then((did) => {
+      if (did && !$('#sheet-map').classList.contains('hidden')) openPlaceMap(name);
+    });
+  }
   // ask for real location once; re-render with it so ETA & route match reality
   if (!geoAsked) {
     geoAsked = true;
@@ -1137,6 +1194,11 @@ function openSettings() {
         </div>
       </div>
 
+      <div class="srow-btn" style="flex-wrap:wrap;align-items:flex-start">${esc(t('s_ors'))}
+        <input class="input" id="st-ors" placeholder="${esc(t('s_ors_ph'))}" value="${esc(ORS_KEY)}" autocomplete="off" spellcheck="false" style="flex-basis:100%;margin-top:8px">
+        <div class="photo-note" style="flex-basis:100%;margin-top:6px">${esc(t('s_ors_hint'))}</div>
+      </div>
+
       ${isStandalone()
         ? `<div class="srow-btn">${esc(t('s_installed'))}</div>`
         : `<button class="srow-btn" id="st-install">${esc(t('s_install'))}
@@ -1159,6 +1221,13 @@ function openSettings() {
   const rr = $('#st-radius');
   rr.oninput = () => { $('#st-radius-val').textContent = rr.value + ' km'; };
   rr.onchange = () => { APP_STATE.profile.radiusKm = +rr.value; save(); renderCurrentView(); };
+  const ors = $('#st-ors');
+  if (ors) ors.onchange = () => {
+    ORS_KEY = ors.value.trim();
+    try { localStorage.setItem('dateme.orsKey', ORS_KEY); } catch { /* ignore */ }
+    routeCache.clear(); routeSettled.clear(); routeReq.clear();
+    toast(t('s_save'));
+  };
   const inst = $('#st-install');
   if (inst) inst.onclick = async () => {
     if (deferredInstall) { deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; openSettings(); }
