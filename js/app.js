@@ -16,8 +16,8 @@ function defaultState() {
     onboarded: false,
     introShown: false,
     profile: {
-      name: '', age: null, gender: 'm', lookingFor: 'w',
-      langs: [], photos: [], verified: false,
+      id: uid(), name: '', age: null, gender: 'm', lookingFor: 'w',
+      langs: [], photos: [], verified: false, verifyStatus: 'none', verifyId: null,
       locale: detectLocale(), radiusKm: 10,
     },
     // dynamic per-person flags
@@ -41,6 +41,8 @@ function loadState() {
     if (!Array.isArray(s.profile.photos)) s.profile.photos = [];
     if (s.profile.photo && !s.profile.photos.length) s.profile.photos = [s.profile.photo];
     delete s.profile.photo;
+    if (!s.profile.id) s.profile.id = uid();
+    if (!s.profile.verifyStatus) s.profile.verifyStatus = s.profile.verified ? 'approved' : 'none';
     s.people = Object.fromEntries(Object.entries(d.people).map(([id, base]) => [id, { ...base, ...(s.people?.[id] || {}) }]));
     s.unseen = { ...d.unseen, ...(s.unseen || {}) };
     s.dates = s.dates || [];
@@ -92,6 +94,7 @@ function svgIcon(name, cls = '') {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pickOf = (arr) => arr[Math.floor(Math.random() * arr.length)];
+function uid(p = 'u') { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 const dyn = (id) => APP_STATE.people[id];
 const base = (id) => DEMO_BY_ID[id];
 const avatar = (p) => avatarDataURI(p.name, p.hues[0], p.hues[1]);
@@ -503,6 +506,49 @@ function staticMap(place, me) {
   return `<div class="map-tiles">${tiles}${mark(me, 'memark', '')}${mark(place, 'mmarker', svgIcon('pin'))}</div>`;
 }
 
+/* ---- real routing via a keyless public service ----
+   Uses the FOSSGIS Valhalla demo server for real walk/bike/car times
+   (road distance, elevation-aware) so the in-app number matches Maps —
+   no API key, works for every user. It is a public fair-use server, so
+   swap ROUTER_URL for your own backend before scaling. Transit has no
+   costing here, so it stays a distance estimate. Offline → estimate. */
+const ROUTER_URL = 'https://valhalla1.openstreetmap.de/route';
+const ROUTE_COSTING = { walk: 'pedestrian', bike: 'bicycle', car: 'auto' };
+const routeCache = new Map();   // `${sig}|${mode}` -> { km, min }
+const routeSettled = new Set(); // signatures whose fetch has finished
+const routeReq = new Set();     // signatures currently/already requested
+const routeSig = (name, me) => `${name}|${me.lat.toFixed(4)},${me.lng.toFixed(4)}`;
+const cachedRoute = (name, me, mode) => routeCache.get(`${routeSig(name, me)}|${mode}`);
+async function fetchRoutes(name, me, geo) {
+  const sig = routeSig(name, me);
+  if (!navigator.onLine || routeReq.has(sig)) return false;
+  routeReq.add(sig);
+  await Promise.allSettled(Object.entries(ROUTE_COSTING).map(async ([mode, costing]) => {
+    try {
+      const body = {
+        locations: [{ lat: me.lat, lon: me.lng }, { lat: geo.lat, lon: geo.lng }],
+        costing, units: 'kilometers', directions_type: 'none',
+      };
+      // GET with ?json= avoids a CORS preflight (simple request)
+      const r = await fetch(ROUTER_URL + '?json=' + encodeURIComponent(JSON.stringify(body)));
+      if (!r.ok) return;
+      const sum = (await r.json())?.trip?.summary;
+      if (sum && sum.time != null) {
+        routeCache.set(`${sig}|${mode}`, { km: sum.length, min: Math.max(1, Math.round(sum.time / 60)) });
+      }
+    } catch { /* keep estimate */ }
+  }));
+  routeSettled.add(sig);
+  return true;
+}
+function fmtEta(min) {
+  if (min >= 60) {
+    const h = Math.floor(min / 60), m = min % 60;
+    return '~' + h + ' ' + t('u_h') + (m ? ' ' + m + ' ' + t('u_min') : '');
+  }
+  return '~' + min + ' ' + t('u_min');
+}
+
 let mapMode = 'transit';
 function placeTag(name) {
   return `<span class="ptag" data-map="${esc(name)}">${svgIcon('pin')} ${esc(name)}</span>`;
@@ -512,13 +558,25 @@ function openPlaceMap(name) {
   const me = myLoc();
   const s = $('#sheet-map');
   const km = geo ? routeKm(geo) : null;
+  const sig = geo ? routeSig(name, me) : '';
+  const loading = geo && navigator.onLine && !routeSettled.has(sig);
   const curMode = TRAVEL_MODES.find((m) => m.id === mapMode) || TRAVEL_MODES[0];
+  const carRoute = geo ? cachedRoute(name, me, 'car') : null;
+  const metFor = (m) => {
+    const c = ROUTE_COSTING[m.id] ? cachedRoute(name, me, m.id) : null;
+    if (c) return fmtEta(c.min);
+    if (ROUTE_COSTING[m.id] && loading) return '<span class="tdots"><i></i><i></i><i></i></span>';
+    const baseKm = (m.id === 'transit' && carRoute) ? carRoute.km : km;
+    return fmtEta(etaMin(baseKm, m));
+  };
   const modesHTML = geo ? `<div class="modes">${TRAVEL_MODES.map((m) => `
       <button class="mode ${m.id === mapMode ? 'on' : ''}" data-m="${m.id}">
         <span class="mi">${svgIcon(m.icon)}</span>
-        <span class="met">${esc(t('eta_min', { n: etaMin(km, m) }))}</span>
+        <span class="met">${metFor(m)}</span>
         <span class="ml">${esc(t('mode_' + m.id))}</span>
       </button>`).join('')}</div>` : '';
+  const curRoute = geo && ROUTE_COSTING[mapMode] ? cachedRoute(name, me, mapMode) : null;
+  const distKm = curRoute ? curRoute.km : km;
   const openHref = geo ? mapsLink(geo, me, curMode, name)
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}`;
   s.innerHTML = `
@@ -532,7 +590,7 @@ function openPlaceMap(name) {
         ${geo ? `<div class="map-expand">${svgIcon('expand')}</div>` : ''}
       </div>
       ${geo ? `<div class="map-legend"><span><i class="lg-you"></i>${esc(t('map_you'))}</span><span><i class="lg-place"></i>${esc(name)}</span></div>` : ''}
-      ${geo ? `<div class="map-dist">${svgIcon('route')} <b>${esc(t('d_km', { km: km.toFixed(1).replace('.0', '') }))}</b> ${esc(t('map_from_you'))}</div>` : ''}
+      ${geo ? `<div class="map-dist">${svgIcon('route')} <b>${esc(t('d_km', { km: distKm.toFixed(1).replace('.0', '') }))}</b> ${esc(t('map_from_you'))}</div>` : ''}
       <div class="section-sub" style="margin-bottom:8px">${esc(t('map_title'))}</div>
       ${modesHTML}
       <a class="btn btn-primary" id="mp-open" href="${openHref}" target="_blank" rel="noopener">${svgIcon('compass')} ${esc(t('map_open'))}</a>
@@ -548,6 +606,12 @@ function openPlaceMap(name) {
   // if any tile fails to load (offline), drop the tile layer -> styled fallback shows
   const tilesEl = $('.map-tiles', s);
   if (tilesEl) $$('.mtile', tilesEl).forEach((im) => { im.onerror = () => tilesEl.classList.add('hide'); });
+  // fetch real routes once and re-render with the results
+  if (geo && navigator.onLine && !routeSettled.has(sig)) {
+    fetchRoutes(name, me, geo).then((did) => {
+      if (did && !$('#sheet-map').classList.contains('hidden')) openPlaceMap(name);
+    });
+  }
   // ask for real location once; re-render with it so ETA & route match reality
   if (!geoAsked) {
     geoAsked = true;
@@ -1117,12 +1181,17 @@ function openSettings() {
       <div class="me-card">
         <img src="${myAvatar()}" alt="" id="st-me-photo">
         <div>
-          <div class="mn">${esc(pr.name)}, ${pr.age} <span class="vbadge">${svgIcon('check')}</span></div>
+          <div class="mn">${esc(pr.name)}, ${pr.age} ${pr.verifyStatus === 'approved' ? `<span class="vbadge">${svgIcon('check')}</span>` : `<span class="vchip ${pr.verifyStatus}">${esc(t(veStatusKey(pr.verifyStatus)))}</span>`}</div>
           <div class="ml">${esc(langList(pr.langs))}${myPhotos().length > 1 ? ` · ${myPhotos().length} ${esc(t('ph_title')).toLowerCase()}` : ''}</div>
         </div>
       </div>
 
       <button class="srow-btn" id="st-profile">${esc(t('s_profile'))}<span class="sv">→</span></button>
+
+      <button class="srow-btn" id="st-verify">${esc(t('ve_status'))}
+        <span class="sv"><span class="vchip ${pr.verifyStatus}">${esc(t(veStatusKey(pr.verifyStatus)))}</span></span></button>
+
+      <button class="srow-btn" id="st-admin">${esc(t('s_admin'))}<span class="sv">→</span></button>
 
       <div class="srow-btn">${esc(t('s_lang'))}
         <select class="input" id="st-lang" style="max-width:160px;margin-left:auto;padding:9px 12px">
@@ -1152,6 +1221,12 @@ function openSettings() {
   s.onclick = (e) => { if (e.target === s) s.classList.add('hidden'); };
   $('#st-me-photo').onclick = () => openGallery(myPhotos().length ? myPhotos() : [myAvatar()], 0);
   $('#st-profile').onclick = () => { s.classList.add('hidden'); openProfileEditor(); };
+  $('#st-verify').onclick = () => {
+    if (APP_STATE.profile.verifyStatus === 'approved') return;
+    s.classList.add('hidden');
+    startVerification(() => { if (!$('#main').classList.contains('hidden')) renderCurrentView(); openSettings(); });
+  };
+  $('#st-admin').onclick = () => { s.classList.add('hidden'); openAdmin(); };
   $('#st-lang').onchange = (e) => {
     APP_STATE.profile.locale = e.target.value; save();
     renderStatic(); renderCurrentView(); openSettings();
@@ -1262,32 +1337,134 @@ function openProfileEditor(isFirstRun = false) {
       lookingFor: $('#f-looking .chip.on')?.dataset.v || 'all',
     });
 
-    if (isFirstRun) {
-      await playVerification(photos[0] || avatarDataURI(name, 330, 275));
-      pr.verified = true;
-      APP_STATE.onboarded = true;
-      seedInitialLikes();
-    }
     save();
+    if (isFirstRun) {
+      startVerification(() => {
+        APP_STATE.onboarded = true;
+        seedInitialLikes();
+        save();
+        enterMain();
+      });
+      return;
+    }
     enterMain();
   };
 }
 
-function playVerification(img) {
-  return new Promise((res) => {
-    const v = $('#verify');
+/* ---------------- verification (gesture selfie → moderation) ---------------- */
+const VERIF_KEY = 'dateme.verifications';
+function loadVerifs() { try { return JSON.parse(localStorage.getItem(VERIF_KEY)) || []; } catch { return []; } }
+function saveVerifs(list) { try { localStorage.setItem(VERIF_KEY, JSON.stringify(list)); } catch { /* quota */ } }
+const veStatusKey = (st) => 've_st_' + (st === 'approved' ? 'approved' : st === 'rejected' ? 'rejected' : 'pending');
+
+/** Onboarding/anti-catfish: show a drawn example gesture, capture a selfie
+ *  that repeats it, and file a moderation request. Structured to POST to
+ *  Supabase later (auth.uid, storage URL for the selfie, a verifications row). */
+function startVerification(onDone) {
+  const pr = APP_STATE.profile;
+  const g = pickOf(VERIFY_GESTURES);
+  const v = $('#verify');
+  const file = $('#ve-file');
+  let selfie = null;
+  const draw = () => {
     v.innerHTML = `
-      <div>
-        <div class="vph"><img src="${img}" alt=""><div class="scan"></div></div>
-        <div class="vtxt">${esc(t('ob_checking'))}</div>
-        <div class="section-sub" style="margin:6px auto 0">${esc(t('ob_geo'))}</div>
+      <div class="ve-card">
+        <div class="ve-h">${esc(t('ve_title'))}</div>
+        <p class="ve-sub">${esc(t('ve_sub'))}</p>
+        <div class="ve-pair">
+          <div class="ve-col">
+            <div class="ve-cap">${esc(t('ve_example'))}</div>
+            <div class="ve-frame"><img src="${gestureSVG(g.id)}" alt=""></div>
+          </div>
+          <div class="ve-col">
+            <div class="ve-cap">${esc(t('ve_your'))}</div>
+            <button type="button" class="ve-frame shot" id="ve-shot">
+              ${selfie ? `<img src="${selfie}" alt="">` : `<span class="ve-plus">${svgIcon('plus')}</span><span>${esc(t('ve_take'))}</span>`}
+            </button>
+          </div>
+        </div>
+        <div class="ve-instr">${svgIcon('info')} ${esc(t('ve_g_' + g.id))}</div>
+        ${selfie ? `<button class="btn btn-ghost btn-sm" id="ve-retake">${svgIcon('shuffle')} ${esc(t('ve_retake'))}</button>` : ''}
+        <button class="btn btn-primary" id="ve-submit" ${selfie ? '' : 'disabled'}>${svgIcon('check')} ${esc(t('ve_submit'))}</button>
+        <p class="ve-note">${svgIcon('info')} ${esc(t('ve_note'))}</p>
       </div>`;
-    v.classList.remove('hidden');
-    setTimeout(() => {
-      v.innerHTML = `<div><div class="vok">${svgIcon('check')}</div><div class="vtxt">${esc(t('ob_verified'))}</div></div>`;
-      setTimeout(() => { v.classList.add('hidden'); res(); }, 1100);
-    }, 2300);
-  });
+    $('#ve-shot').onclick = () => file.click();
+    const rt = $('#ve-retake'); if (rt) rt.onclick = () => file.click();
+    $('#ve-submit').onclick = () => {
+      if (!selfie) return;
+      const list = loadVerifs().filter((r) => !(r.userId === pr.id && r.status === 'pending'));
+      const req = { id: uid('v'), userId: pr.id, name: pr.name, age: pr.age, gestureId: g.id, selfie, status: 'pending', createdAt: Date.now() };
+      list.push(req);
+      saveVerifs(list);
+      pr.verifyId = req.id; pr.verifyStatus = 'pending'; pr.verified = false;
+      save();
+      file.onchange = null;
+      v.classList.add('hidden'); v.innerHTML = '';
+      toast(t('ve_pending'), selfie);
+      onDone && onDone();
+    };
+  };
+  file.onchange = async (e) => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    selfie = await downscalePhoto(f);
+    draw();
+  };
+  v.classList.remove('hidden');
+  draw();
+}
+
+/* demo moderation queue — Phase 2 wires this to a Supabase admin role */
+function openAdmin() {
+  const s = $('#sheet-admin');
+  const decide = (id, act) => {
+    const list = loadVerifs();
+    const r = list.find((x) => x.id === id);
+    if (!r) return;
+    r.status = act === 'approve' ? 'approved' : 'rejected';
+    r.reviewedAt = Date.now();
+    saveVerifs(list);
+    if (r.userId === APP_STATE.profile.id) {
+      APP_STATE.profile.verifyStatus = r.status;
+      APP_STATE.profile.verified = r.status === 'approved';
+      save();
+      if (!$('#main').classList.contains('hidden')) renderCurrentView();
+    }
+    toast(t(act === 'approve' ? 'admin_approve' : 'admin_reject') + ' · ' + r.name, r.selfie);
+    draw();
+  };
+  const draw = () => {
+    const list = loadVerifs().slice().reverse();
+    s.innerHTML = `
+      <div class="sheet-card">
+        <div class="grab"></div>
+        <div class="sheet-head"><div class="sheet-title">${esc(t('admin_title'))}</div>
+          <button class="icon-btn" id="ad-close">${svgIcon('x')}</button></div>
+        ${list.length ? `<div class="ad-list">${list.map((r) => `
+          <div class="ad-row" data-id="${r.id}">
+            <div class="ad-imgs">
+              <figure><img src="${gestureSVG(r.gestureId)}" alt=""><figcaption>${esc(t('admin_example'))}</figcaption></figure>
+              <figure><img class="ad-selfie" src="${r.selfie}" alt=""><figcaption>${esc(t('admin_selfie'))}</figcaption></figure>
+            </div>
+            <div class="ad-meta"><b>${esc(r.name)}, ${r.age}</b>
+              <span class="ad-status ${r.status}">${esc(t(veStatusKey(r.status)))}</span></div>
+            ${r.status === 'pending' ? `<div class="ad-acts">
+              <button class="btn btn-danger btn-sm" data-act="reject">${svgIcon('x')} ${esc(t('admin_reject'))}</button>
+              <button class="btn btn-primary btn-sm" data-act="approve">${svgIcon('check')} ${esc(t('admin_approve'))}</button>
+            </div>` : ''}
+          </div>`).join('')}</div>`
+        : `<div class="empty"><div class="eico">${svgIcon('check')}</div><p>${esc(t('admin_empty'))}</p></div>`}
+      </div>`;
+    $('#ad-close').onclick = () => s.classList.add('hidden');
+    s.onclick = (e) => { if (e.target === s) s.classList.add('hidden'); };
+    $$('.ad-row', s).forEach((row) => {
+      const id = row.dataset.id;
+      $$('[data-act]', row).forEach((b) => { b.onclick = () => decide(id, b.dataset.act); });
+      $$('.ad-imgs img', row).forEach((im) => { im.onclick = () => openGallery([im.src], 0); });
+    });
+  };
+  s.classList.remove('hidden');
+  draw();
 }
 
 function seedInitialLikes() {
@@ -1359,6 +1536,9 @@ function boot() {
   }
 
   startSimulation();
+
+  // demo admin entry: open the moderation queue with ?admin=1
+  if (new URLSearchParams(location.search).get('admin') === '1') setTimeout(openAdmin, 300);
 
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
     addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
