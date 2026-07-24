@@ -93,3 +93,43 @@ const TRAVEL_MODES = [
   { id: 'transit', icon: 'transit', kmh: 21,  g: 'transit',   a: 'r' },
   { id: 'car',     icon: 'car',     kmh: 28,  g: 'driving',   a: 'd' },
 ];
+
+/* ---------------- verification gestures ----------------
+   Anti-catfishing: a random gesture is shown as a drawn example (no real
+   person's photo) and the user must replicate it in a selfie. `ups` = which
+   of the 4 fingers are raised; `thumb`: 'out' | 'in' | 'up'. */
+const VERIFY_GESTURES = [
+  { id: 'palm',  ups: [1, 1, 1, 1], thumb: 'out' },
+  { id: 'peace', ups: [1, 1, 0, 0], thumb: 'in' },
+  { id: 'three', ups: [1, 1, 1, 0], thumb: 'in' },
+  { id: 'thumb', ups: [0, 0, 0, 0], thumb: 'up' },
+];
+
+function handShape(ups, thumb) {
+  const skin = '#ece3fb', ink = '#181026', sw = 4;
+  const fx = [178, 196, 214, 232];
+  let s = '';
+  // fingers (draw before palm so palm overlaps their base)
+  ups.forEach((up, i) => {
+    const h = up ? 92 : 30, y = 188 - h;
+    s += `<rect x="${fx[i]}" y="${y}" width="14" height="${h + 20}" rx="7" fill="${skin}" stroke="${ink}" stroke-width="${sw}"/>`;
+  });
+  if (thumb === 'up') s += `<rect x="204" y="120" width="16" height="74" rx="8" fill="${skin}" stroke="${ink}" stroke-width="${sw}"/>`;
+  if (thumb === 'out') s += `<rect x="150" y="196" width="40" height="16" rx="8" transform="rotate(-20 150 196)" fill="${skin}" stroke="${ink}" stroke-width="${sw}"/>`;
+  // palm
+  s += `<rect x="170" y="182" width="76" height="86" rx="26" fill="${skin}" stroke="${ink}" stroke-width="${sw}"/>`;
+  return s;
+}
+
+/** drawn selfie example for a gesture (SVG data-URI) */
+function gestureSVG(id) {
+  const g = VERIFY_GESTURES.find((x) => x.id === id) || VERIFY_GESTURES[0];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 380">
+<rect x="6" y="6" width="288" height="368" rx="34" fill="#120f18"/>
+<circle cx="110" cy="150" r="56" fill="#3a2b58"/>
+<path d="M34 344 q76 -104 152 0 z" fill="#3a2b58"/>
+${handShape(g.ups, g.thumb)}
+<rect x="6" y="6" width="288" height="368" rx="34" fill="none" stroke="#a855f7" stroke-width="4"/>
+</svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
