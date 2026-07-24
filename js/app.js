@@ -17,7 +17,7 @@ function defaultState() {
     introShown: false,
     profile: {
       id: uid(), name: '', age: null, gender: 'm', lookingFor: 'w',
-      langs: [], photos: [], verified: false, verifyStatus: 'none', verifyId: null,
+      langs: [], photos: [], verified: false, verifyStatus: 'none', verifyId: null, verifyComment: '',
       locale: detectLocale(), radiusKm: 10,
     },
     // dynamic per-person flags
@@ -1169,6 +1169,7 @@ function isStandalone() {
 }
 
 function openSettings() {
+  syncVerification();
   const s = $('#sheet-settings');
   const pr = APP_STATE.profile;
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -1188,10 +1189,10 @@ function openSettings() {
 
       <button class="srow-btn" id="st-profile">${esc(t('s_profile'))}<span class="sv">→</span></button>
 
-      <button class="srow-btn" id="st-verify">${esc(t('ve_status'))}
-        <span class="sv"><span class="vchip ${pr.verifyStatus}">${esc(t(veStatusKey(pr.verifyStatus)))}</span></span></button>
-
-      <button class="srow-btn" id="st-admin">${esc(t('s_admin'))}<span class="sv">→</span></button>
+      <button class="srow-btn" id="st-verify" style="flex-wrap:wrap">${esc(t('ve_status'))}
+        <span class="sv"><span class="vchip ${pr.verifyStatus}">${esc(t(veStatusKey(pr.verifyStatus)))}</span></span>
+        ${pr.verifyStatus === 'rejected' && pr.verifyComment ? `<div class="ve-reason">${svgIcon('info')} ${esc(t('ve_reason'))}: ${esc(pr.verifyComment)}</div>` : ''}
+      </button>
 
       <div class="srow-btn">${esc(t('s_lang'))}
         <select class="input" id="st-lang" style="max-width:160px;margin-left:auto;padding:9px 12px">
@@ -1226,7 +1227,6 @@ function openSettings() {
     s.classList.add('hidden');
     startVerification(() => { if (!$('#main').classList.contains('hidden')) renderCurrentView(); openSettings(); });
   };
-  $('#st-admin').onclick = () => { s.classList.add('hidden'); openAdmin(); };
   $('#st-lang').onchange = (e) => {
     APP_STATE.profile.locale = e.target.value; save();
     renderStatic(); renderCurrentView(); openSettings();
@@ -1393,7 +1393,7 @@ function startVerification(onDone) {
     $('#ve-submit').onclick = () => {
       if (!selfie) return;
       const list = loadVerifs().filter((r) => !(r.userId === pr.id && r.status === 'pending'));
-      const req = { id: uid('v'), userId: pr.id, name: pr.name, age: pr.age, gestureId: g.id, selfie, status: 'pending', createdAt: Date.now() };
+      const req = { id: uid('v'), userId: pr.id, name: pr.name, age: pr.age, gestureId: g.id, selfie, status: 'pending', comment: '', createdAt: Date.now() };
       list.push(req);
       saveVerifs(list);
       pr.verifyId = req.id; pr.verifyStatus = 'pending'; pr.verified = false;
@@ -1414,57 +1414,24 @@ function startVerification(onDone) {
   draw();
 }
 
-/* demo moderation queue — Phase 2 wires this to a Supabase admin role */
-function openAdmin() {
-  const s = $('#sheet-admin');
-  const decide = (id, act) => {
-    const list = loadVerifs();
-    const r = list.find((x) => x.id === id);
-    if (!r) return;
-    r.status = act === 'approve' ? 'approved' : 'rejected';
-    r.reviewedAt = Date.now();
-    saveVerifs(list);
-    if (r.userId === APP_STATE.profile.id) {
-      APP_STATE.profile.verifyStatus = r.status;
-      APP_STATE.profile.verified = r.status === 'approved';
-      save();
-      if (!$('#main').classList.contains('hidden')) renderCurrentView();
-    }
-    toast(t(act === 'approve' ? 'admin_approve' : 'admin_reject') + ' · ' + r.name, r.selfie);
-    draw();
-  };
-  const draw = () => {
-    const list = loadVerifs().slice().reverse();
-    s.innerHTML = `
-      <div class="sheet-card">
-        <div class="grab"></div>
-        <div class="sheet-head"><div class="sheet-title">${esc(t('admin_title'))}</div>
-          <button class="icon-btn" id="ad-close">${svgIcon('x')}</button></div>
-        ${list.length ? `<div class="ad-list">${list.map((r) => `
-          <div class="ad-row" data-id="${r.id}">
-            <div class="ad-imgs">
-              <figure><img src="${gestureSVG(r.gestureId)}" alt=""><figcaption>${esc(t('admin_example'))}</figcaption></figure>
-              <figure><img class="ad-selfie" src="${r.selfie}" alt=""><figcaption>${esc(t('admin_selfie'))}</figcaption></figure>
-            </div>
-            <div class="ad-meta"><b>${esc(r.name)}, ${r.age}</b>
-              <span class="ad-status ${r.status}">${esc(t(veStatusKey(r.status)))}</span></div>
-            ${r.status === 'pending' ? `<div class="ad-acts">
-              <button class="btn btn-danger btn-sm" data-act="reject">${svgIcon('x')} ${esc(t('admin_reject'))}</button>
-              <button class="btn btn-primary btn-sm" data-act="approve">${svgIcon('check')} ${esc(t('admin_approve'))}</button>
-            </div>` : ''}
-          </div>`).join('')}</div>`
-        : `<div class="empty"><div class="eico">${svgIcon('check')}</div><p>${esc(t('admin_empty'))}</p></div>`}
-      </div>`;
-    $('#ad-close').onclick = () => s.classList.add('hidden');
-    s.onclick = (e) => { if (e.target === s) s.classList.add('hidden'); };
-    $$('.ad-row', s).forEach((row) => {
-      const id = row.dataset.id;
-      $$('[data-act]', row).forEach((b) => { b.onclick = () => decide(id, b.dataset.act); });
-      $$('.ad-imgs img', row).forEach((im) => { im.onclick = () => openGallery([im.src], 0); });
-    });
-  };
-  s.classList.remove('hidden');
-  draw();
+/* Pull the latest moderation decision (made in the admin site at
+   /adminka6582/, same origin/localStorage) back into the profile so the
+   user sees their status and the moderator's comment. Phase 2: Supabase. */
+function syncVerification() {
+  const pr = APP_STATE.profile;
+  if (!pr || !pr.id) return false;
+  const mine = loadVerifs().filter((r) => r.userId === pr.id).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const r = mine[0];
+  const st = r ? r.status : (pr.verifyStatus || 'none');
+  const cm = r ? (r.comment || '') : '';
+  if (st !== pr.verifyStatus || cm !== (pr.verifyComment || '')) {
+    pr.verifyStatus = st;
+    pr.verifyComment = cm;
+    pr.verified = st === 'approved';
+    save();
+    return true;
+  }
+  return false;
 }
 
 function seedInitialLikes() {
@@ -1537,8 +1504,21 @@ function boot() {
 
   startSimulation();
 
-  // demo admin entry: open the moderation queue with ?admin=1
-  if (new URLSearchParams(location.search).get('admin') === '1') setTimeout(openAdmin, 300);
+  // pick up moderation decisions / admin edits made in the admin site (same origin)
+  syncVerification();
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && syncVerification() && !$('#main').classList.contains('hidden')) renderCurrentView();
+  });
+  addEventListener('storage', (e) => {
+    if (e.key === VERIF_KEY) {
+      if (syncVerification() && !$('#main').classList.contains('hidden')) renderCurrentView();
+    } else if (e.key === LS_KEY) {
+      if (wiz && wiz.alive) return; // don't disrupt an active planner
+      APP_STATE = loadState();
+      window.APP_STATE = APP_STATE;
+      if (!$('#main').classList.contains('hidden')) { renderHeader(); renderBadges(); renderCurrentView(); }
+    }
+  });
 
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
     addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));

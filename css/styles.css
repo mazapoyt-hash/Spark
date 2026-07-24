@@ -377,6 +377,14 @@ input[type="date"].input, input[type="time"].input { color-scheme: dark; }
 .vchip.pending { color: var(--gold, #fbbf24); border-color: rgba(251,191,36,0.4); }
 .vchip.approved { color: #7bf2b5; border-color: rgba(52,211,153,0.4); }
 .vchip.rejected { color: #f87171; border-color: rgba(248,113,113,0.4); }
+.ve-reason {
+  flex-basis: 100%; margin-top: 10px;
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 10px 12px; border-radius: 12px;
+  background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.32);
+  color: #f8a8a8; font-size: 13px; font-weight: 600; line-height: 1.4;
+}
+.ve-reason .ic { flex: none; margin-top: 1px; }
 
 /* admin moderation queue */
 .ad-list { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }

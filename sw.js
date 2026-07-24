@@ -1,5 +1,5 @@
 /* DATE ME — service worker: offline-first app shell */
-const VERSION = 'dateme-v9';
+const VERSION = 'dateme-v10';
 const SHELL = [
   './',
   './index.html',
@@ -14,6 +14,10 @@ const SHELL = [
   './icons/icon-maskable-192.png',
   './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
+  './adminka6582/',
+  './adminka6582/index.html',
+  './adminka6582/admin.css',
+  './adminka6582/admin.js',
 ];
 
 self.addEventListener('install', (e) => {
@@ -33,6 +37,9 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
+
+  // the admin site (/adminka6582/) is a separate page — never serve the app shell for it
+  if (new URL(req.url).pathname.includes('adminka6582')) return;
 
   // SPA navigations: serve cached shell, refresh in background
   if (req.mode === 'navigate') {
