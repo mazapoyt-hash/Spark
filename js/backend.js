@@ -41,11 +41,27 @@
     },
 
     /* ---- profiles ---- */
-    async upsertProfile(profile) {
+    async upsertProfile({ name, age, gender, photoBlobs }) {
       const { data: { user } } = await client.auth.getUser();
       if (!user) throw new Error('not signed in');
-      const { error } = await client.from('profiles').upsert({ id: user.id, ...profile });
+      const row = { id: user.id, name, age, gender };
+      if (photoBlobs && photoBlobs.length) {
+        const paths = [];
+        for (let i = 0; i < photoBlobs.length; i++) {
+          const path = `${user.id}/photo-${i}.jpg`;
+          const up = await client.storage.from('selfies').upload(path, photoBlobs[i], { contentType: 'image/jpeg', upsert: true });
+          if (up.error) throw up.error;
+          paths.push(path);
+        }
+        row.photos = paths;
+      }
+      const { error } = await client.from('profiles').upsert(row);
       if (error) throw error;
+    },
+    async mediaUrl(path) { // download any object from the selfies bucket → object URL
+      const { data, error } = await client.storage.from('selfies').download(path);
+      if (error) throw error;
+      return URL.createObjectURL(data);
     },
     async getProfile(userId) {
       const { data, error } = await client.from('profiles').select('*').eq('id', userId).maybeSingle();

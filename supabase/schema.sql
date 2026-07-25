@@ -10,8 +10,10 @@ create table if not exists public.profiles (
   name       text,
   age        int,
   gender     text,
+  photos     text[],   -- storage paths of the applicant's profile photos
   created_at timestamptz not null default now()
 );
+alter table public.profiles add column if not exists photos text[];
 alter table public.profiles enable row level security;
 
 drop policy if exists "profiles read own" on public.profiles;
@@ -98,4 +100,10 @@ create policy "selfie read own or admin" on storage.objects
   for select using (
     bucket_id = 'selfies'
     and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin())
+  );
+-- a user can overwrite their own files (re-uploading profile photos)
+drop policy if exists "selfie update own" on storage.objects;
+create policy "selfie update own" on storage.objects
+  for update using (
+    bucket_id = 'selfies' and (storage.foldername(name))[1] = auth.uid()::text
   );

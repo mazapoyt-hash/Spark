@@ -1,5 +1,5 @@
 /* DATE ME — service worker: offline-first app shell */
-const VERSION = 'dateme-v14';
+const VERSION = 'dateme-v15';
 const SHELL = [
   './',
   './index.html',

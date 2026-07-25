@@ -1367,9 +1367,11 @@ function openProfileEditor(isFirstRun = false) {
     });
 
     save();
-    // Real mode: mirror the profile into Supabase so the admin can view/edit it.
+    // Real mode: mirror the profile (incl. photos) into Supabase so the admin
+    // can view and compare it against the verification selfie.
     if (window.Backend && Backend.enabled) {
-      try { await Backend.upsertProfile({ name, age, gender: pr.gender }); } catch { /* non-fatal */ }
+      try { await Backend.upsertProfile({ name, age, gender: pr.gender, photoBlobs: photos.map(dataUrlToBlob) }); }
+      catch { /* non-fatal */ }
     }
     if (isFirstRun) {
       startVerification(() => {

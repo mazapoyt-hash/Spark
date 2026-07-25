@@ -175,7 +175,9 @@ main {
   width: 100%; max-width: 480px;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  padding: 10px 10px calc(10px + var(--safe-b));
+  /* installed (standalone) adds the home-indicator inset; don't stack the full
+     base padding on top of it or the bar floats too high off the bottom */
+  padding: 10px 10px max(10px, calc(var(--safe-b) - 10px));
   background: rgba(9, 9, 12, 0.88);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
