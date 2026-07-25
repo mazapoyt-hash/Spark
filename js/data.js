@@ -105,19 +105,60 @@ const VERIFY_GESTURES = [
   { id: 'thumb', ups: [0, 0, 0, 0], thumb: 'up' },
 ];
 
-function handShape(ups, thumb) {
-  const skin = '#ece3fb', ink = '#181026', sw = 4;
-  const fx = [178, 196, 214, 232];
+/* ---- hand illustration (clean, friendly, palm-to-camera) ---- */
+const _STROKE = '#c98f66';               // soft skin outline
+const _CREASE = 'rgba(120,66,36,0.22)';  // knuckle/joint lines
+// finger geometry: centre-x, width, fingertip-y when raised
+const _FINGERS = [
+  { cx: 118, w: 28, tip: 104 }, // index
+  { cx: 148, w: 30, tip: 84 },  // middle (longest)
+  { cx: 178, w: 29, tip: 100 }, // ring
+  { cx: 206, w: 24, tip: 132 }, // pinky
+];
+const _BASE = 214; // finger root (tucked under the palm)
+
+function _fingerUp(f) {
+  const x = f.cx - f.w / 2, h = _BASE - f.tip;
+  return `<rect x="${x}" y="${f.tip}" width="${f.w}" height="${h}" rx="${f.w / 2}" fill="url(#sk)" stroke="${_STROKE}" stroke-width="2.5"/>`
+    + `<ellipse cx="${f.cx}" cy="${f.tip + 15}" rx="${f.w / 2 - 6}" ry="9" fill="#fff" opacity="0.32"/>`
+    + `<path d="M${x + 4} ${f.tip + 46} q ${f.w / 2 - 4} 8 ${f.w - 8} 0" fill="none" stroke="${_CREASE}" stroke-width="2" stroke-linecap="round"/>`;
+}
+function _fingerFold(f) {
+  const x = f.cx - f.w / 2;
+  return `<rect x="${x}" y="184" width="${f.w}" height="42" rx="${f.w / 2}" fill="url(#sk2)" stroke="${_STROKE}" stroke-width="2.5"/>`
+    + `<path d="M${x + 2} 200 q ${f.w / 2 - 2} 8 ${f.w - 4} 0" fill="none" stroke="${_CREASE}" stroke-width="2" stroke-linecap="round"/>`;
+}
+
+/** full hand for a gesture (palm-to-camera, or a fist for thumbs-up) */
+function handArt(g) {
+  // thumbs-up is a distinct pose: a fist with the thumb pointing up
+  if (g.thumb === 'up') {
+    return `
+      <rect x="150" y="118" width="40" height="112" rx="20" fill="url(#sk)" stroke="${_STROKE}" stroke-width="2.5" transform="rotate(-7 170 174)"/>
+      <ellipse cx="167" cy="132" rx="11" ry="9" fill="#fff" opacity="0.3" transform="rotate(-7 167 132)"/>
+      <rect x="104" y="196" width="122" height="132" rx="40" fill="url(#sk)" stroke="${_STROKE}" stroke-width="2.5"/>
+      ${[122, 150, 178, 205].map((cx, i) => `<rect x="${cx - 13}" y="200" width="26" height="46" rx="13" fill="url(#sk2)" stroke="${_STROKE}" stroke-width="2" transform="rotate(${(i - 1.5) * 3} ${cx} 223)"/>`).join('')}
+      <path d="M112 250 q 55 16 108 0" fill="none" stroke="${_CREASE}" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M150 214 q 6 -12 22 -12" fill="none" stroke="${_CREASE}" stroke-width="2.5" stroke-linecap="round"/>`;
+  }
   let s = '';
-  // fingers (draw before palm so palm overlaps their base)
-  ups.forEach((up, i) => {
-    const h = up ? 92 : 30, y = 188 - h;
-    s += `<rect x="${fx[i]}" y="${y}" width="14" height="${h + 20}" rx="7" fill="${skin}" stroke="${ink}" stroke-width="${sw}"/>`;
-  });
-  if (thumb === 'up') s += `<rect x="204" y="120" width="16" height="74" rx="8" fill="${skin}" stroke="${ink}" stroke-width="${sw}"/>`;
-  if (thumb === 'out') s += `<rect x="150" y="196" width="40" height="16" rx="8" transform="rotate(-20 150 196)" fill="${skin}" stroke="${ink}" stroke-width="${sw}"/>`;
+  // wrist / cuff first (behind the palm)
+  s += `<rect x="118" y="300" width="94" height="72" rx="26" fill="url(#cuff)"/>`;
+  s += `<rect x="120" y="292" width="90" height="40" rx="20" fill="url(#sk)" stroke="${_STROKE}" stroke-width="2.5"/>`;
   // palm
-  s += `<rect x="170" y="182" width="76" height="86" rx="26" fill="${skin}" stroke="${ink}" stroke-width="${sw}"/>`;
+  s += `<rect x="104" y="196" width="122" height="120" rx="42" fill="url(#sk)" stroke="${_STROKE}" stroke-width="2.5"/>`;
+  // palm creases (subtle life-lines)
+  s += `<path d="M132 230 q 26 30 12 66" fill="none" stroke="${_CREASE}" stroke-width="2.5" stroke-linecap="round"/>`;
+  s += `<path d="M198 232 q -20 26 -18 60" fill="none" stroke="${_CREASE}" stroke-width="2.5" stroke-linecap="round"/>`;
+  // thumb
+  if (g.thumb === 'out') {
+    s += `<rect x="60" y="238" width="78" height="30" rx="15" fill="url(#sk)" stroke="${_STROKE}" stroke-width="2.5" transform="rotate(-24 138 253)"/>`;
+    s += `<ellipse cx="76" cy="248" rx="9" ry="6" fill="#fff" opacity="0.3" transform="rotate(-24 76 248)"/>`;
+  } else { // tucked across the palm
+    s += `<rect x="96" y="250" width="96" height="30" rx="15" fill="url(#sk2)" stroke="${_STROKE}" stroke-width="2.5" transform="rotate(9 150 265)"/>`;
+  }
+  // fingers on top of the palm
+  s += g.ups.map((up, i) => (up ? _fingerUp(_FINGERS[i]) : _fingerFold(_FINGERS[i]))).join('');
   return s;
 }
 
@@ -125,10 +166,29 @@ function handShape(ups, thumb) {
 function gestureSVG(id) {
   const g = VERIFY_GESTURES.find((x) => x.id === id) || VERIFY_GESTURES[0];
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 380">
-<rect x="6" y="6" width="288" height="368" rx="34" fill="#120f18"/>
-<circle cx="110" cy="150" r="56" fill="#3a2b58"/>
-<path d="M34 344 q76 -104 152 0 z" fill="#3a2b58"/>
-${handShape(g.ups, g.thumb)}
+<defs>
+<linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#1a1330"/><stop offset="1" stop-color="#100c1a"/>
+</linearGradient>
+<radialGradient id="glow" cx="0.5" cy="0.46" r="0.6">
+<stop offset="0" stop-color="rgba(168,85,247,0.4)"/><stop offset="1" stop-color="rgba(168,85,247,0)"/>
+</radialGradient>
+<linearGradient id="sk" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#ffe7d2"/><stop offset="1" stop-color="#f0c6a3"/>
+</linearGradient>
+<linearGradient id="sk2" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#f4d3b6" /><stop offset="1" stop-color="#e3b48d"/>
+</linearGradient>
+<linearGradient id="cuff" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#a855f7"/><stop offset="1" stop-color="#7c3aed"/>
+</linearGradient>
+</defs>
+<rect x="6" y="6" width="288" height="368" rx="34" fill="url(#card)"/>
+<circle cx="150" cy="188" r="132" fill="url(#glow)"/>
+<circle cx="52" cy="52" r="2.4" fill="rgba(255,255,255,0.7)"/>
+<circle cx="248" cy="84" r="1.8" fill="hsla(268,90%,82%,0.85)"/>
+<circle cx="60" cy="330" r="1.6" fill="rgba(255,255,255,0.5)"/>
+${handArt(g)}
 <rect x="6" y="6" width="288" height="368" rx="34" fill="none" stroke="#a855f7" stroke-width="4"/>
 </svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);

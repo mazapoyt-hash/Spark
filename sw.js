@@ -1,10 +1,11 @@
 /* DATE ME — service worker: offline-first app shell */
-const VERSION = 'dateme-v10';
+const VERSION = 'dateme-v11';
 const SHELL = [
   './',
   './index.html',
   './css/styles.css',
   './js/i18n.js',
+  './js/crypto.js',
   './js/data.js',
   './js/app.js',
   './manifest.webmanifest',

@@ -1,17 +1,38 @@
 'use strict';
 /* ============================================================
-   DATE ME — admin panel (Phase 1, client-side demo).
+   DATE ME — admin panel (Phase 1, client-side).
    Operates on the same-origin localStorage the app uses:
      dateme.v1            — app state (profile, people, dates, unseen)
-     dateme.verifications — moderation queue
-   NOTE: the passcode below is a DEMO gate, not real security (it is
-   visible in this file and the data is only this browser's). Real admin
-   auth, roles and a shared DB come in Phase 2 with Supabase.
+     dateme.verifications — moderation queue (selfies stored ENCRYPTED)
+
+   Security model (honest for a static site):
+   • Admin accounts are hardcoded below by username + SHA-256 password
+     hash — not just anyone can log in, and the plaintext password is not
+     in the code.
+   • Verification selfies are hybrid-encrypted (RSA-OAEP + AES-GCM) to the
+     admin key. The private key ships ONLY wrapped by the admin password,
+     so photos are decryptable NOWHERE except here, after a correct login.
+     The key lives only in memory for the session (no sessionStorage), so
+     a page reload requires logging in again.
+   Real server-side roles + a private store come in Phase 2 (Supabase).
    ============================================================ */
 
-const ADMIN_PASS = 'datemeadmin';
+/* Hardcoded admin accounts: username + SHA-256(password) hex. To add/rotate
+   an admin, regenerate the hash (and, if the password changes, re-wrap the
+   private key below). */
+const ADMIN_ACCOUNTS = [
+  { user: 'admin', hash: 'fc403bfc489b147487576f0a0a6ef1c4cf540ad69476fd210d702e8de39a2ceb' },
+];
+/* Admin RSA private key, wrapped with a key derived (PBKDF2) from the admin
+   password. Useless without the password. */
+const WRAPPED_B64 = 'TP17eRwXLenUN3VjZ3E3GI/P95FZyHAe0SJT0hsh0h0IL1R9ZSEH/BhMq6XjJecl2Y6RkFdu8NKJM0S0INLPXztenHdYh2TAq8CCrTKEVdj8pNlRBlrTAz1bBlGWnRn/pFJCfYX7o6km1yqJF+T/1wHVC+9Xmquh9ArgUd5I3nikrOPoEAQ78PPAruVSIexxkUQFu5KT7OqU35M1OirTg2OGY0viooAU7o8/jDZyaELNDW9D1aAr8uzugfALob/Bl0fWoncU6FU9/sJVAw3d4jAqnKYvB4mi1WPKHUIISwzglyyGFfRQDx8mRqW1+Ogqz4tZDCTr6BFxm55bjKzOmvDtMrpEmGgby+VLV6fgjmbmf7vINbujTRgaJ8E3pVPgtWC3spTIHLAULAUyYmZQlQWJwWbjas6FY+29sBjcBNUF5PVXgEADzGnzIzr1pJkyBRdi/tUx8dmzfJdWRmzFMdbfRDANiPNfDA5xyVKygJbdMKIr2QL8emH7z+pIbh2kWkc4epQifFBYFg9zWwyS8NxkyrhHkG38GApS9FtZGLZz6b00HLQRkZO08B7WFd7t3eeLE8Rn07Z7asOxdM08Q5qL9cxdI2DwdUkf7052mHQKyRD9v9q+VxrMvGcMTgEVf0TLrEYJRUGOt4pi4/zWWCzgvemFWC/N9AQ1zhYi3+uhXL5zjOcwH9wwqdPF4ofaaT8eDrTM5vOcRVMiC8WLmbiMbxKiCst+LGwr+C2QRGqtsW5Gt9iqPvmKL2WoGNgYP9rnZSiohcTo+Voc+Up7GZRCkWzXWFyNikbzRh97Y9w+XChx8Xjxa3F7IP48kmsEDam7GrAoNk99Pngz3jWeNBDCtVhozrf1dqLkm5y0mZ19idJtp6tIFBnZIlloDRVjeGjPu6+WAtv2/jkD+h2y1F7vJcq2dOF/ckEun0VT8C67pIwp85qsf1LX8XIaoEOTODZ33dRkTueqoK1U7AIFX06CKYSoBBhkmHVehZy1XTkcTKPGFweVvmNVs7QWa/ydyvKeIxg404v9flTgSIRxZ0NfWqMuNyZsjTJchWqMLpsUCC6MDGuukPg0AxU2ZcYyqLveGuJ4US3j3sC+jho75QsNCEKGIYk8MYmZNnd/vvxzUYqO0WgvBNMjFdnaORaBFySXIQumLdj0ogwnZlu5o8vxn2fgSZFN0a51zzg/FUTNzmTUaemDc9f8NskMmbSHAl/F5MpJ56w5/XqZxdkJyTV//exnRohBFPj0bnlMEyfswehexwdyLclED4n69yLUJfQ6DJFs6KqIM5mbMyrSjQMqjeqw7/jQSblDULdszozEdOnRb4jCmvusT0Azw/JLaFB0gLffFGNXH5ahthXt5un1hNSlTVMhImASIfkgP66jHY2jWziMhOXGNFAwGwcFpNevhQgV8oeJMqxExbD9T4lWzs1OxREJUG9PvAh4gmOXAKwLxMkL75YJMvU2NHF11AJ4fMA7G/WEpqX1ncsHCG3a4fLSAhlPZ72odqRNl/dcnnVogTRnk3+PkLmJjbW1wsKeCYY9of/IDRr8Ly/xdCzO4Lvei6iUMAjnHXFCo+Vhp4AYzTiZduB0o5zJHv11R6ZTJw2fEKcWeLnntP1OqmnZfPIj/fdJhsC9Ta37fx7F';
+const SALT_B64 = 'f1cDLSbJXj5mkrOg1cDfQQ==';
+const IV_B64 = '6i+y1mSzimkDJjnI';
+
 const LS_KEY = 'dateme.v1';
 const VKEY = 'dateme.verifications';
+let ADMIN_PRIV = null;        // unwrapped RSA private key, in-memory only
+const selfieCache = new Map(); // verifId → decrypted data-URL (this session)
 
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
@@ -39,25 +60,46 @@ function zoom(src) {
   m.onclick = () => m.classList.add('hidden');
 }
 
-/* ---------------- auth gate ---------------- */
-const isAuthed = () => sessionStorage.getItem('adm') === '1';
+/* ---------------- auth gate ----------------
+   Login = correct username + password. The password both (a) matches a
+   hardcoded account hash and (b) unwraps the RSA private key. Only when the
+   key unwraps successfully is access granted — so a wrong password can never
+   reveal selfies even if the hash check were bypassed. */
+const isAuthed = () => !!ADMIN_PRIV;
 
 function renderLogin() {
   $('#app').innerHTML = `
     <div class="login">
       <form class="login-card" id="lf">
         <div class="brand">DATE&nbsp;ME <span>ADMIN</span></div>
-        <p class="muted">Введите пароль администратора</p>
-        <input id="pw" type="password" placeholder="Пароль" autocomplete="off" autofocus>
+        <p class="muted">Вход только для администраторов</p>
+        <input id="us" type="text" placeholder="Логин" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus>
+        <input id="pw" type="password" placeholder="Пароль" autocomplete="off">
         <div class="err" id="le"></div>
-        <button class="btn primary block" type="submit">Войти</button>
-        <p class="note">Демо-доступ по секретному пути. Это не настоящая защита — полноценная авторизация админов и роли появятся в Фазе 2 (Supabase).</p>
+        <button class="btn primary block" id="lb" type="submit">Войти</button>
+        <p class="note">Аккаунты администраторов заданы жёстко. Заявки на верификацию (селфи) зашифрованы и расшифровываются только здесь, после входа. Полноценные роли и общая база — в Фазе 2 (Supabase).</p>
       </form>
     </div>`;
-  $('#lf').onsubmit = (e) => {
+  $('#lf').onsubmit = async (e) => {
     e.preventDefault();
-    if ($('#pw').value === ADMIN_PASS) { sessionStorage.setItem('adm', '1'); renderApp(); }
-    else { $('#le').textContent = 'Неверный пароль'; }
+    const user = $('#us').value.trim();
+    const pass = $('#pw').value;
+    const btn = $('#lb'); const err = $('#le');
+    err.textContent = '';
+    const acc = ADMIN_ACCOUNTS.find((a) => a.user === user);
+    btn.disabled = true; btn.textContent = 'Проверка…';
+    try {
+      const ok = acc && (await sha256hex(pass)) === acc.hash;
+      // Unwrapping the private key is the real gate: it only succeeds with the
+      // correct password, independent of the hash check above.
+      ADMIN_PRIV = ok ? await deriveAdminKey(pass, WRAPPED_B64, SALT_B64, IV_B64) : null;
+      if (!ADMIN_PRIV) throw new Error('bad');
+      renderApp();
+    } catch {
+      ADMIN_PRIV = null;
+      err.textContent = 'Неверный логин или пароль';
+      btn.disabled = false; btn.textContent = 'Войти';
+    }
   };
 }
 
@@ -76,7 +118,7 @@ function renderApp() {
       <main class="content" id="content"></main>
     </div>`;
   $$('.nav[data-s]').forEach((b) => { b.onclick = () => { section = b.dataset.s; renderApp(); }; });
-  $('#logout').onclick = () => { sessionStorage.removeItem('adm'); renderLogin(); };
+  $('#logout').onclick = () => { ADMIN_PRIV = null; selfieCache.clear(); renderLogin(); };
   renderSection();
 }
 function pendingBadge() {
@@ -166,7 +208,7 @@ function renderVerif() {
         <div class="vhead"><b>${esc(r.name)}, ${r.age}</b><span class="tag ${r.status}">${stName(r.status)}</span></div>
         <div class="vshots">
           <figure><img src="${gestureSVG(r.gestureId)}" data-zoom="${gestureSVG(r.gestureId)}" alt=""><figcaption>Пример: ${gname(r.gestureId)}</figcaption></figure>
-          <figure><img src="${esc(r.selfie)}" data-zoom="${esc(r.selfie)}" alt=""><figcaption>Селфи</figcaption></figure>
+          <figure><img id="selfie-${r.id}" alt="" data-selfie="${r.id}"><figcaption>Селфи</figcaption></figure>
         </div>
         ${extra.length ? `<div class="vmore">${extra.map((p) => `<img class="vthumb" src="${esc(p)}" data-zoom="${esc(p)}" alt="">`).join('')}</div>` : ''}
         <div class="vinstr">Требуемый жест: ${esc(gname(r.gestureId))}</div>
@@ -188,6 +230,30 @@ function renderVerif() {
       decide(b.dataset.id, b.dataset.act);
     };
   });
+  // Decrypt each selfie in place (only possible with the unwrapped admin key).
+  list.forEach((r) => paintSelfie(r));
+}
+
+/** Decrypt a request's selfie and drop it into its <img> (async, cached). */
+async function paintSelfie(r) {
+  const img = $('#selfie-' + r.id);
+  if (!img) return;
+  let url = selfieCache.get(r.id);
+  if (!url) {
+    try {
+      if (r.enc) url = await decryptSelfie(r.enc, ADMIN_PRIV);
+      else if (r.selfie) url = r.selfie; // legacy plaintext request
+      else throw new Error('no data');
+      selfieCache.set(r.id, url);
+    } catch {
+      img.replaceWith(Object.assign(document.createElement('div'), { className: 'selfie-fail', textContent: 'Не удалось расшифровать' }));
+      return;
+    }
+  }
+  img.src = url;
+  img.dataset.zoom = url;
+  img.style.cursor = 'zoom-in';
+  img.onclick = () => zoom(url);
 }
 function reopen(id) {
   const list = loadVerifs();
@@ -345,4 +411,5 @@ function renderCtrl() {
 /* ---------------- boot ---------------- */
 // keep the panel fresh if the app (another tab) changes data
 addEventListener('storage', (e) => { if ((e.key === VKEY || e.key === LS_KEY) && isAuthed()) renderApp(); });
-if (isAuthed()) renderApp(); else renderLogin();
+// The unwrap key lives only in memory, so every load starts at the login gate.
+renderLogin();

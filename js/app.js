@@ -1390,17 +1390,24 @@ function startVerification(onDone) {
       </div>`;
     $('#ve-shot').onclick = () => file.click();
     const rt = $('#ve-retake'); if (rt) rt.onclick = () => file.click();
-    $('#ve-submit').onclick = () => {
+    $('#ve-submit').onclick = async () => {
       if (!selfie) return;
+      const btn = $('#ve-submit'); btn.disabled = true;
+      // Encrypt the selfie to the admin's public key before it ever touches
+      // storage, so it is unreadable anywhere except the admin panel.
+      let enc;
+      try { enc = await encryptSelfie(selfie); }
+      catch (err) { btn.disabled = false; toast(t('ve_pending')); return; }
       const list = loadVerifs().filter((r) => !(r.userId === pr.id && r.status === 'pending'));
-      const req = { id: uid('v'), userId: pr.id, name: pr.name, age: pr.age, gestureId: g.id, selfie, status: 'pending', comment: '', createdAt: Date.now() };
+      const req = { id: uid('v'), userId: pr.id, name: pr.name, age: pr.age, gestureId: g.id, enc, status: 'pending', comment: '', createdAt: Date.now() };
       list.push(req);
       saveVerifs(list);
       pr.verifyId = req.id; pr.verifyStatus = 'pending'; pr.verified = false;
       save();
       file.onchange = null;
+      selfie = null;
       v.classList.add('hidden'); v.innerHTML = '';
-      toast(t('ve_pending'), selfie);
+      toast(t('ve_pending'));
       onDone && onDone();
     };
   };
