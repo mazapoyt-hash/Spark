@@ -54,6 +54,9 @@ img { display: block; }
 .login-card input:focus { border-color: var(--vio); }
 .login-card .err { color: var(--red); font-size: 13px; font-weight: 600; min-height: 16px; }
 .login-card .note { color: var(--faint); font-size: 11.5px; line-height: 1.5; margin-top: 4px; }
+.login-card .or { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12px; margin: 4px 0; }
+.login-card .or::before, .login-card .or::after { content: ''; flex: 1; height: 1px; background: var(--stroke-2); }
+.login-card code { background: var(--bg-2); padding: 1px 5px; border-radius: 5px; font-size: 11px; }
 
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 18px; border-radius: 13px; font-weight: 700; font-size: 15px; transition: transform 0.12s, filter 0.15s; border: 1px solid var(--stroke-2); background: var(--card-2); color: var(--text); }
 .btn:active { transform: scale(0.97); }

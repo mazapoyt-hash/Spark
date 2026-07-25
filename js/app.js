@@ -1169,7 +1169,7 @@ function isStandalone() {
 }
 
 function openSettings() {
-  syncVerification();
+  syncVerification().then((ch) => { if (ch && !$('#sheet-settings').classList.contains('hidden')) openSettings(); });
   const s = $('#sheet-settings');
   const pr = APP_STATE.profile;
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -1365,7 +1365,37 @@ function startVerification(onDone) {
   const g = pickOf(VERIFY_GESTURES);
   const v = $('#verify');
   const file = $('#ve-file');
+  const backend = !!(window.Backend && Backend.enabled);
   let selfie = null;
+
+  const close = () => { file.onchange = null; v.classList.add('hidden'); v.innerHTML = ''; };
+
+  // Real mode: sign in first (email link / Google / Apple), then verify.
+  const drawAuth = () => {
+    v.innerHTML = `
+      <div class="ve-card">
+        <div class="ve-h">${esc(t('auth_needed'))}</div>
+        <p class="ve-sub">${esc(t('auth_sub'))}</p>
+        <button class="btn btn-ghost" id="ve-google">${esc(t('auth_google'))}</button>
+        <button class="btn btn-ghost" id="ve-apple">${esc(t('auth_apple'))}</button>
+        <div class="ve-or">${esc(t('auth_or'))}</div>
+        <input class="input" id="ve-email" type="email" inputmode="email" autocomplete="email" placeholder="${esc(t('auth_email_ph'))}">
+        <button class="btn btn-primary" id="ve-email-btn">${esc(t('auth_email'))}</button>
+        <p class="ve-note" id="ve-auth-note"></p>
+        <button class="btn btn-ghost btn-sm" id="ve-later">${esc(t('ve_later'))}</button>
+      </div>`;
+    const note = (m) => { $('#ve-auth-note').textContent = m; };
+    $('#ve-google').onclick = () => Backend.signInOAuth('google').catch((e) => note(e.message || e));
+    $('#ve-apple').onclick = () => Backend.signInOAuth('apple').catch((e) => note(e.message || e));
+    $('#ve-email-btn').onclick = async () => {
+      const em = $('#ve-email').value.trim(); if (!em) return;
+      const b = $('#ve-email-btn'); b.disabled = true;
+      try { await Backend.signInEmail(em); note(t('auth_sent')); }
+      catch (e) { note(e.message || e); b.disabled = false; }
+    };
+    $('#ve-later').onclick = () => { close(); onDone && onDone(); };
+  };
+
   const draw = () => {
     v.innerHTML = `
       <div class="ve-card">
@@ -1393,7 +1423,18 @@ function startVerification(onDone) {
     $('#ve-submit').onclick = async () => {
       if (!selfie) return;
       const btn = $('#ve-submit'); btn.disabled = true;
-      // Encrypt the selfie to the admin's public key before it ever touches
+      if (backend) {
+        // Real mode: upload the selfie to the private bucket + file a row.
+        try {
+          const u = await Backend.user();
+          if (!u) { drawAuth(); return; }
+          await Backend.submitVerification({ userId: u.id, name: pr.name, age: pr.age, gestureId: g.id, blob: dataUrlToBlob(selfie) });
+          pr.verifyStatus = 'pending'; pr.verified = false; pr.verifyComment = ''; save();
+        } catch (err) { btn.disabled = false; toast((err && (err.message || err)) || t('ve_pending')); return; }
+        selfie = null; close(); toast(t('ve_pending')); onDone && onDone();
+        return;
+      }
+      // Demo mode: encrypt the selfie to the admin key before it touches
       // storage, so it is unreadable anywhere except the admin panel.
       let enc;
       try { enc = await encryptSelfie(selfie); }
@@ -1404,9 +1445,7 @@ function startVerification(onDone) {
       saveVerifs(list);
       pr.verifyId = req.id; pr.verifyStatus = 'pending'; pr.verified = false;
       save();
-      file.onchange = null;
-      selfie = null;
-      v.classList.add('hidden'); v.innerHTML = '';
+      selfie = null; close();
       toast(t('ve_pending'));
       onDone && onDone();
     };
@@ -1418,27 +1457,47 @@ function startVerification(onDone) {
     draw();
   };
   v.classList.remove('hidden');
-  draw();
+  if (backend) {
+    Backend.user().then((u) => (u ? draw() : drawAuth())).catch(() => drawAuth());
+  } else {
+    draw();
+  }
 }
 
-/* Pull the latest moderation decision (made in the admin site at
-   /adminka6582/, same origin/localStorage) back into the profile so the
-   user sees their status and the moderator's comment. Phase 2: Supabase. */
-function syncVerification() {
+/** dataURL → Blob (for uploading a selfie to storage). */
+function dataUrlToBlob(dataUrl) {
+  const [head, b64] = dataUrl.split(',');
+  const mime = (head.match(/:(.*?);/) || [])[1] || 'image/jpeg';
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
+/* Pull the latest moderation decision back into the profile so the user sees
+   their status and the moderator's comment. Real mode reads it from Supabase
+   (tied to the signed-in account); demo mode reads the local queue that the
+   admin site writes on the same origin. Returns whether anything changed. */
+async function syncVerification() {
   const pr = APP_STATE.profile;
-  if (!pr || !pr.id) return false;
+  if (!pr) return false;
+  const apply = (st, cm) => {
+    if (st !== pr.verifyStatus || cm !== (pr.verifyComment || '')) {
+      pr.verifyStatus = st; pr.verifyComment = cm; pr.verified = st === 'approved'; save();
+      return true;
+    }
+    return false;
+  };
+  if (window.Backend && Backend.enabled) {
+    let u; try { u = await Backend.user(); } catch { return false; }
+    if (!u) return false; // not signed in — leave status as-is
+    let row; try { row = await Backend.myVerification(u.id); } catch { return false; }
+    return apply(row ? row.status : 'none', row ? (row.comment || '') : '');
+  }
+  if (!pr.id) return false;
   const mine = loadVerifs().filter((r) => r.userId === pr.id).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const r = mine[0];
-  const st = r ? r.status : (pr.verifyStatus || 'none');
-  const cm = r ? (r.comment || '') : '';
-  if (st !== pr.verifyStatus || cm !== (pr.verifyComment || '')) {
-    pr.verifyStatus = st;
-    pr.verifyComment = cm;
-    pr.verified = st === 'approved';
-    save();
-    return true;
-  }
-  return false;
+  return apply(r ? r.status : (pr.verifyStatus || 'none'), r ? (r.comment || '') : '');
 }
 
 function seedInitialLikes() {
@@ -1511,14 +1570,14 @@ function boot() {
 
   startSimulation();
 
-  // pick up moderation decisions / admin edits made in the admin site (same origin)
-  syncVerification();
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && syncVerification() && !$('#main').classList.contains('hidden')) renderCurrentView();
-  });
+  // pick up moderation decisions (Supabase in real mode, or the admin site
+  // on the same origin in demo mode)
+  const resync = () => syncVerification().then((ch) => { if (ch && !document.hidden && !$('#main').classList.contains('hidden')) renderCurrentView(); });
+  resync();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) resync(); });
   addEventListener('storage', (e) => {
     if (e.key === VERIF_KEY) {
-      if (syncVerification() && !$('#main').classList.contains('hidden')) renderCurrentView();
+      resync();
     } else if (e.key === LS_KEY) {
       if (wiz && wiz.alive) return; // don't disrupt an active planner
       APP_STATE = loadState();

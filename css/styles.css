@@ -366,6 +366,9 @@ input[type="date"].input, input[type="time"].input { color-scheme: dark; }
 }
 .ve-instr .ic { color: var(--lav); flex: none; }
 .ve-card .btn { margin-bottom: 10px; }
+.ve-card .input { margin-bottom: 10px; }
+.ve-or { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12px; margin: 2px 0 10px; }
+.ve-or::before, .ve-or::after { content: ''; flex: 1; height: 1px; background: var(--stroke-2); }
 .ve-note { display: flex; align-items: center; gap: 8px; color: var(--faint); font-size: 12px; margin-top: 6px; }
 .ve-note .ic { flex: none; }
 

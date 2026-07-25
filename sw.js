@@ -1,5 +1,5 @@
 /* DATE ME — service worker: offline-first app shell */
-const VERSION = 'dateme-v12';
+const VERSION = 'dateme-v13';
 const SHELL = [
   './',
   './index.html',
@@ -7,6 +7,8 @@ const SHELL = [
   './js/i18n.js',
   './js/crypto.js',
   './js/data.js',
+  './js/supabase-config.js',
+  './js/backend.js',
   './js/app.js',
   './manifest.webmanifest',
   './icons/favicon.svg',
