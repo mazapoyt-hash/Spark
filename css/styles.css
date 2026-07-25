@@ -156,7 +156,7 @@ h1.logo { font-size: 44px; gap: 14px; }
 main {
   flex: 1; min-height: 0;
   display: flex; flex-direction: column;
-  padding: 2px 18px 108px;
+  padding: 2px 18px 86px;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
@@ -175,9 +175,9 @@ main {
   width: 100%; max-width: 480px;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  /* installed (standalone) adds the home-indicator inset; don't stack the full
-     base padding on top of it or the bar floats too high off the bottom */
-  padding: 10px 10px max(10px, calc(var(--safe-b) - 10px));
+  /* installed (standalone) adds the home-indicator inset; sit just above it,
+     don't stack the full base padding on top or the bar floats too high */
+  padding: 8px 10px max(8px, calc(var(--safe-b) - 18px));
   background: rgba(9, 9, 12, 0.88);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
