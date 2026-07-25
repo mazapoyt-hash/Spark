@@ -97,7 +97,10 @@ const pickOf = (arr) => arr[Math.floor(Math.random() * arr.length)];
 function uid(p = 'u') { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 const dyn = (id) => APP_STATE.people[id];
 const base = (id) => DEMO_BY_ID[id];
-const avatar = (p) => avatarDataURI(p.name, p.hues[0], p.hues[1]);
+const avatar = (p) => (p._photos && p._photos[0]) || avatarDataURI(p.name, p.hues[0], p.hues[1]);
+const kmStr = (p) => (p && p.km != null ? p.km.toFixed(1).replace('.0', '') : null);
+/** localized distance label, with a graceful fallback when location is unknown */
+const distLabel = (p) => (kmStr(p) ? `${t('d_km', { km: kmStr(p) })} ${t('map_from_you')}` : t('f_near'));
 const myPhotos = () => (APP_STATE.profile.photos || []);
 const myAvatar = () => myPhotos()[0] || avatarDataURI(APP_STATE.profile.name || 'You', 330, 275);
 /** photos to show for a person (demo people have one generated portrait) */
@@ -148,22 +151,63 @@ function matchesPref(p) {
 }
 const inRadius = (p) => p.km <= APP_STATE.profile.radiusKm;
 
-const deckList = () => DEMO_PEOPLE.filter((p) => {
-  const d = dyn(p.id);
-  return matchesPref(p) && inRadius(p) && d.online && !d.iLiked && !d.declined && !d.likedMe;
-}).sort((a, b) => a.km - b.km);
+/* ---- real discovery (Supabase) — falls back to demo when not loaded ---- */
+let REAL_DISCOVERY = false;   // true once real nearby data is loaded
+let REAL_PEOPLE = [];         // nearby real users (mapped to the demo shape)
+let REAL_BY_ID = {};
+let realLikes = new Set();    // ids I liked
+let realLikedMe = new Set();  // ids that liked me
+let realPasses = new Set();   // ids I passed (this session/local)
+let realLoading = null;
 
-const likesList = () => DEMO_PEOPLE.filter((p) => {
-  const d = dyn(p.id);
-  return d.likedMe && !d.iLiked && !d.declined && d.online;
-}).sort((a, b) => a.km - b.km);
+const hashHue = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; };
+const mapRealUser = (u) => ({ id: u.id, name: u.name || '—', age: u.age || '', gender: u.gender || '', langs: [], km: (u.km == null ? null : u.km), hues: [hashHue(u.id), (hashHue(u.id) + 40) % 360], _photos: u.photos || [], _real: true });
+const rst = (id) => ({ online: true, likedMe: realLikedMe.has(id), iLiked: realLikes.has(id), declined: realPasses.has(id), dateId: null, note: null });
+const person = (id) => (REAL_DISCOVERY ? REAL_BY_ID[id] : DEMO_BY_ID[id]) || { name: '?', age: '', hues: [270, 300] };
 
-const matchList = () => DEMO_PEOPLE.filter((p) => {
-  const d = dyn(p.id);
-  return d.likedMe && d.iLiked && !d.declined && !d.dateId;
-});
+async function loadRealDiscovery() {
+  if (!(window.Backend && Backend.enabled)) { REAL_DISCOVERY = false; return false; }
+  let u; try { u = await Backend.user(); } catch { REAL_DISCOVERY = false; return false; }
+  if (!u) { REAL_DISCOVERY = false; return false; }
+  try {
+    if (USER_GEO) { try { await Backend.updateMyGeo(USER_GEO.lat, USER_GEO.lng); } catch { /* non-fatal */ } }
+    const [nearby, mine, ofme] = await Promise.all([
+      Backend.nearbyUsers(USER_GEO, APP_STATE.profile.radiusKm || 10),
+      Backend.myLikes(), Backend.likesOfMe(),
+    ]);
+    REAL_PEOPLE = nearby.map(mapRealUser);
+    REAL_BY_ID = Object.fromEntries(REAL_PEOPLE.map((p) => [p.id, p]));
+    realLikes = new Set(mine); realLikedMe = new Set(ofme);
+    realPasses = new Set(APP_STATE.realPasses || []);
+    REAL_DISCOVERY = true;
+    return true;
+  } catch (e) { REAL_DISCOVERY = false; try { console.warn('real discovery unavailable, using demo:', e.message || e); } catch { /* no console */ } return false; }
+}
+/* load once (or when asked to refresh) before showing the discover tab */
+function ensureRealDiscovery(force) {
+  if (!(window.Backend && Backend.enabled)) return Promise.resolve(false);
+  if (!force && realLoading) return realLoading;
+  realLoading = loadRealDiscovery();
+  return realLoading;
+}
 
-const onlineNearby = () => DEMO_PEOPLE.filter((p) => dyn(p.id).online && inRadius(p) && matchesPref(p)).length;
+const deckList = () => (REAL_DISCOVERY
+  ? REAL_PEOPLE.filter((p) => { const d = rst(p.id); return matchesPref(p) && !d.iLiked && !d.declined && !d.likedMe; })
+  : DEMO_PEOPLE.filter((p) => { const d = dyn(p.id); return matchesPref(p) && inRadius(p) && d.online && !d.iLiked && !d.declined && !d.likedMe; })
+).sort((a, b) => (a.km == null ? 1e9 : a.km) - (b.km == null ? 1e9 : b.km));
+
+const likesList = () => (REAL_DISCOVERY
+  ? REAL_PEOPLE.filter((p) => { const d = rst(p.id); return d.likedMe && !d.iLiked && !d.declined; })
+  : DEMO_PEOPLE.filter((p) => { const d = dyn(p.id); return d.likedMe && !d.iLiked && !d.declined && d.online; })
+).sort((a, b) => (a.km == null ? 1e9 : a.km) - (b.km == null ? 1e9 : b.km));
+
+const matchList = () => (REAL_DISCOVERY
+  ? REAL_PEOPLE.filter((p) => { const d = rst(p.id); return d.likedMe && d.iLiked && !d.declined; })
+  : DEMO_PEOPLE.filter((p) => { const d = dyn(p.id); return d.likedMe && d.iLiked && !d.declined && !d.dateId; }));
+
+const onlineNearby = () => (REAL_DISCOVERY
+  ? REAL_PEOPLE.filter((p) => matchesPref(p)).length
+  : DEMO_PEOPLE.filter((p) => dyn(p.id).online && inRadius(p) && matchesPref(p)).length);
 
 /* ---------------- static i18n ---------------- */
 function renderStatic() {
@@ -199,6 +243,21 @@ function switchTab(tab) {
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + tab));
   renderBadges();
   renderCurrentView();
+  // Real mode: make sure nearby people + likes are loaded, then refresh.
+  if (window.Backend && Backend.enabled) {
+    if (tab === 'discover') requestDiscoveryGeo();
+    ensureRealDiscovery().then((ok) => { if (ok && currentTab === tab) renderCurrentView(); });
+  }
+}
+
+/* ask for location the first time discovery is shown; on success refresh so
+   real distances appear. */
+function requestDiscoveryGeo() {
+  ensureGeo((g) => {
+    if (g && window.Backend && Backend.enabled) {
+      ensureRealDiscovery(true).then((ok) => { if (ok && currentTab === 'discover') renderCurrentView(); });
+    }
+  });
 }
 
 function renderCurrentView() {
@@ -265,7 +324,7 @@ function renderDiscover() {
           <div class="cfade"></div>
           <div class="cinfo">
             <div class="cname">${esc(p.name)}, ${p.age} <span class="vbadge">${svgIcon('check')}</span></div>
-            <div class="ckm"><i class="dot"></i> ${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))} ${esc(t('map_from_you'))}</div>
+            <div class="ckm"><i class="dot"></i> ${esc(distLabel(p))}</div>
             <div class="cbtns">
               <button class="cbtn" id="cc-info" aria-label="${esc(t('info_view'))}">
                 <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11.2v4.6"/><circle cx="12" cy="8" r="1.05" fill="currentColor" stroke="none"/></svg>
@@ -333,8 +392,18 @@ function bindOrbitResize() {
 function deckAction(id, liked) {
   const card = $('#deck .ccard');
   if (card) card.classList.add(liked ? 'leave-like' : 'leave-skip');
-  const d = dyn(id);
-  if (liked) { d.iLiked = true; scheduleLikeBack(id); } else { d.declined = true; }
+  if (REAL_DISCOVERY) {
+    if (liked) {
+      realLikes.add(id);
+      Backend.like(id).catch(() => {});
+      if (realLikedMe.has(id)) onMutualLike(id); // they already liked me → match
+    } else {
+      realPasses.add(id); APP_STATE.realPasses = [...realPasses];
+    }
+  } else {
+    const d = dyn(id);
+    if (liked) { d.iLiked = true; scheduleLikeBack(id); } else { d.declined = true; }
+  }
   centralId = null;
   save();
   setTimeout(() => { renderDiscover(); renderHeader(); }, 420);
@@ -389,7 +458,7 @@ function openGallery(images, start = 0) {
 
 /* ---------------- profile / info sheet ---------------- */
 function openProfileSheet(pid) {
-  const p = base(pid);
+  const p = person(pid);
   const d = dyn(pid);
   const photos = personPhotos(p);
   const s = $('#sheet-profile');
@@ -409,7 +478,7 @@ function openProfileSheet(pid) {
       </div>
       <div class="pmeta-row">
         <span class="mtag ${d.online ? 'on' : ''}"><i class="dot"></i>${esc(d.online ? t('d_online') : t('meet_offline'))}</span>
-        <span class="mtag">${svgIcon('pin')} ${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))} ${esc(t('map_from_you'))}</span>
+        <span class="mtag">${svgIcon('pin')} ${esc(distLabel(p))}</span>
       </div>
       <div class="pmeta-row">
         ${p.langs.map((c) => `<span class="mtag">${svgIcon('globe')} ${esc(LANG_NAMES[c] || c)}</span>`).join('')}
@@ -631,7 +700,7 @@ function notePresets() {
   return (I18N[loc] && I18N[loc].note_presets) || I18N.en.note_presets;
 }
 function openNote(pid) {
-  const p = base(pid);
+  const p = person(pid);
   const d = dyn(pid);
   const s = $('#sheet-note');
   const draw = () => {
@@ -697,7 +766,7 @@ function renderLikes() {
       <span class="lheart">${svgIcon('heart')}</span>
       <div class="lbody">
         <div class="lname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:16px;height:16px;font-size:9px">${svgIcon('check')}</span></div>
-        <div class="lsub">${esc(t('d_km', { km: p.km.toFixed(1).replace('.0', '') }))} · ${esc(langList(p.langs))}</div>
+        <div class="lsub">${esc(distLabel(p))}${p.langs && p.langs.length ? ' · ' + esc(langList(p.langs)) : ''}</div>
         <div class="lbtns">
           <button class="mini no" title="${esc(t('l_decline'))}">${svgIcon('x')}</button>
           <button class="mini yes" title="${esc(t('l_like_back'))}">${svgIcon('heart')}</button>
@@ -706,8 +775,15 @@ function renderLikes() {
     </div>`).join('');
   $$('.lcard', grid).forEach((card) => {
     const id = card.dataset.id;
-    $('.yes', card).onclick = (e) => { heartBurst(e.clientX, e.clientY); dyn(id).iLiked = true; save(); onMutualLike(id, true); renderLikes(); };
-    $('.no', card).onclick = () => { dyn(id).declined = true; save(); renderLikes(); renderHeader(); };
+    $('.yes', card).onclick = (e) => {
+      heartBurst(e.clientX, e.clientY);
+      if (REAL_DISCOVERY) { realLikes.add(id); Backend.like(id).catch(() => {}); } else { dyn(id).iLiked = true; }
+      save(); onMutualLike(id, true); renderLikes();
+    };
+    $('.no', card).onclick = () => {
+      if (REAL_DISCOVERY) { realPasses.add(id); APP_STATE.realPasses = [...realPasses]; } else { dyn(id).declined = true; }
+      save(); renderLikes(); renderHeader();
+    };
   });
 }
 
@@ -716,14 +792,14 @@ function onMutualLike(id, instant = false) {
   APP_STATE.unseen.meet++;
   save();
   renderBadges();
-  const p = base(id);
+  const p = person(id);
   if (instant || document.visibilityState === 'visible') showMatchModal(id);
   else toast(t('match_toast', { name: p.name }), avatar(p));
   if (currentTab === 'meet') renderMeet();
 }
 
 function showMatchModal(id) {
-  const p = base(id);
+  const p = person(id);
   const w = $('#match-modal');
   w.innerHTML = `
     <div>
@@ -763,7 +839,7 @@ function renderMeet() {
       <img class="mimg" src="${avatar(p)}" alt="">
       <div class="mtxt">
         <div class="mname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:16px;height:16px;font-size:9px">${svgIcon('check')}</span></div>
-        <div class="msub">${off ? esc(t('meet_offline')) : `<i class="dot"></i> ${esc(t('d_online'))} · ${esc(t('d_km', { km: p.km }))}`}</div>
+        <div class="msub">${off ? esc(t('meet_offline')) : `<i class="dot"></i> ${esc(t('d_online'))}${p.km != null ? ' · ' + esc(t('d_km', { km: p.km })) : ''}`}</div>
       </div>
       ${off ? '' : `<div class="macts">
         <button class="mbtn msg ${sent ? 'sent' : ''}" aria-label="${esc(t('note_open'))}">${svgIcon('envelope')}${unread ? '<i class="ndot"></i>' : ''}</button>
@@ -783,7 +859,7 @@ function renderMeet() {
 let wiz = null;
 
 function openWizard(pid) {
-  const p = base(pid);
+  const p = person(pid);
   dyn(pid).online = true; // partner stays online while planning
   wiz = { pid, alive: true, chooser: null, inside: null, place: '', dateISO: null, time: null };
   const sheet = $('#sheet-wizard');
@@ -891,7 +967,7 @@ function meSays(text) {
 }
 function partnerBubble(html, kind = '') {
   $('#wz-log').insertAdjacentHTML('beforeend',
-    `<div class="pb"><img src="${avatar(base(wiz.pid))}" alt=""><div class="bub ${kind}">${html}</div></div>`);
+    `<div class="pb"><img src="${avatar(person(wiz.pid))}" alt=""><div class="bub ${kind}">${html}</div></div>`);
   $('#wz-log').lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
 async function partnerThinks(w, ms) {
@@ -920,7 +996,7 @@ function askYesNo(mapName) {
 
 async function runWizard() {
   const w = wiz;
-  const p = base(w.pid);
+  const p = person(w.pid);
   const name = p.name;
 
   /* ---- Q1: who picks the spot ---- */
@@ -1084,7 +1160,7 @@ async function wizardDone(w, p) {
   save();
   // Real mode: sync the scheduled date so it shows in the admin.
   if (window.Backend && Backend.enabled) {
-    Backend.saveDate({ person: p.name, place: w.place, inside: w.inside, dateISO: w.dateISO, time: w.time })
+    Backend.saveDate({ person: p.name, place: w.place, inside: w.inside, dateISO: w.dateISO, time: w.time, target: REAL_DISCOVERY ? w.pid : null })
       .catch(() => { /* non-fatal */ });
   }
 
@@ -1132,7 +1208,7 @@ function renderDates() {
   }
 
   const card = (d, isPast) => {
-    const p = base(d.personId);
+    const p = person(d.personId);
     return `
       <div class="dcard ${isPast ? 'past' : ''}" data-id="${d.id}">
         <img class="dimg" src="${avatar(p)}" alt="">
@@ -1155,7 +1231,7 @@ function renderDates() {
       const id = b.closest('.dcard').dataset.id;
       const d = APP_STATE.dates.find((x) => x.id === id);
       if (!d) return;
-      const p = base(d.personId);
+      const p = person(d.personId);
       APP_STATE.dates = APP_STATE.dates.filter((x) => x.id !== id);
       if (dyn(d.personId).dateId === id) dyn(d.personId).dateId = null;
       save();
@@ -1381,7 +1457,7 @@ function openProfileEditor(isFirstRun = false) {
     if (isFirstRun) {
       startVerification(() => {
         APP_STATE.onboarded = true;
-        seedInitialLikes();
+        if (!(window.Backend && Backend.enabled)) seedInitialLikes(); // demo only
         save();
         enterMain();
       });
@@ -1545,10 +1621,11 @@ function seedInitialLikes() {
   APP_STATE.unseen.likes = shuffled.length;
 }
 
-/* ---------------- simulation loops ---------------- */
+/* ---------------- simulation loops (demo only) ---------------- */
 function startSimulation() {
   // presence: someone goes online/offline
   setInterval(() => {
+    if (REAL_DISCOVERY) return; // real mode: no fake presence/likes
     const p = pickOf(DEMO_PEOPLE);
     const d = dyn(p.id);
     if (d.dateId || (wiz && wiz.alive && wiz.pid === p.id)) return;
@@ -1560,6 +1637,7 @@ function startSimulation() {
   // incoming likes over time
   const nextLike = () => {
     setTimeout(() => {
+      if (REAL_DISCOVERY) { nextLike(); return; } // real mode: no fake likes
       const pool = DEMO_PEOPLE.filter((p) => {
         const d = dyn(p.id);
         return matchesPref(p) && !d.likedMe && !d.declined && !d.iLiked;

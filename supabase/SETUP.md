@@ -9,10 +9,17 @@ Project: `https://tuhzhghwsontzmseatgj.supabase.co`
 ## 1. Create the schema
 Dashboard → **SQL Editor** → **New query** → paste all of
 [`schema.sql`](./schema.sql) → **Run**.
-This creates `profiles`, `verifications`, `dates`, `admins`, the `is_admin()`
-function, the private **`selfies`** storage bucket and all Row-Level-Security
-policies. The script is **idempotent — re-run it whenever `schema.sql` changes**
-(e.g. after pulling an update that adds a table or column).
+This creates `profiles` (incl. location + photo URLs), `verifications`,
+`likes`, `dates`, `admins`, the `is_admin()` function, the private
+**`selfies`** bucket, the public **`photos`** bucket (profile pictures shown
+to other users), and all Row-Level-Security policies. The script is
+**idempotent — re-run it whenever `schema.sql` changes** (e.g. after pulling an
+update that adds a table or column).
+
+**Discovery** shows real nearby users: the app stores each user's location on
+their profile (with permission) and lists others within the search radius,
+with real distances. Likes are stored in `likes`; a mutual like is a match.
+Grant the browser **location permission** or distances fall back to "рядом".
 
 ## 2. Allow your site URL (auth redirects)
 Dashboard → **Authentication → URL Configuration**:
