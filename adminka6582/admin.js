@@ -174,7 +174,7 @@ function renderLoginDemo() {
 
 /* ---------------- shell ---------------- */
 let section = 'dash';
-const SECTIONS = [['dash', 'Дашборд'], ['verif', 'Верификации'], ['users', 'Пользователи'], ['dates', 'Свидания'], ['ctrl', 'Управление']];
+const SECTIONS = [['dash', 'Дашборд'], ['verif', 'Верификации'], ['users', 'Пользователи'], ['bots', 'Боты'], ['dates', 'Свидания'], ['ctrl', 'Управление']];
 
 async function renderApp() {
   await refreshVerifs();
@@ -199,7 +199,7 @@ function pendingBadge() {
   return n ? ` <span class="tag pending" style="margin-left:6px">${n}</span>` : '';
 }
 function renderSection() {
-  ({ dash: renderDash, verif: renderVerif, users: renderUsers, dates: renderDates, ctrl: renderCtrl }[section] || renderDash)();
+  ({ dash: renderDash, verif: renderVerif, users: renderUsers, bots: renderBots, dates: renderDates, ctrl: renderCtrl }[section] || renderDash)();
 }
 
 /* ---------------- dashboard ---------------- */
@@ -526,6 +526,93 @@ function renderUsersDemo() {
       patchPerson(b.dataset.id, { [b.dataset.toggle]: !(cur && cur[b.dataset.toggle]), online: b.dataset.toggle === 'likedMe' ? true : (cur ? !cur.online : true) });
     };
   });
+}
+
+/* ---------------- bots ---------------- */
+const LANGS_ALL = ['en', 'de', 'ru', 'uk', 'fr', 'es', 'it', 'pl', 'tr'];
+async function geocodeCity(city) {
+  const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(city), { headers: { Accept: 'application/json' } });
+  if (!r.ok) throw new Error('геокодер недоступен');
+  const j = await r.json();
+  if (!j.length) throw new Error('город не найден');
+  return { lat: +j[0].lat, lng: +j[0].lon };
+}
+function botBehaviorName(b) { return ({ passive: 'В ленте', autolike: 'Лайкает всех' }[b] || b); }
+
+function renderBots() {
+  if (!REAL) {
+    $('#content').innerHTML = '<div class="h1">Боты</div><div class="warn">Боты доступны только в реальном режиме (Supabase). Настройте бэкенд по supabase/SETUP.md.</div>';
+    return;
+  }
+  $('#content').innerHTML = `
+    <div class="h1">Боты</div>
+    <div class="sub">Создавайте сколько угодно ботов — они появляются в поиске как обычные люди (сразу верифицированные).</div>
+    <div class="panel">
+      <h2>Новый бот</h2>
+      <div class="botform">
+        <label>Имя<input id="b-name" placeholder="Anna"></label>
+        <label>Возраст<input id="b-age" type="number" min="18" max="99" placeholder="24"></label>
+        <label>Пол<select id="b-gender"><option value="w">Женский</option><option value="m">Мужской</option></select></label>
+        <label>Город<input id="b-city" placeholder="Berlin"></label>
+        <label>Языки<input id="b-langs" placeholder="ru, en, de"></label>
+        <label>Поведение<select id="b-beh"><option value="passive">Просто в ленте</option><option value="autolike">Лайкает всех рядом</option></select></label>
+        <label>Фото<input id="b-photo" type="file" accept="image/*"></label>
+        <label class="chk"><input id="b-active" type="checkbox" checked> Активен</label>
+      </div>
+      <div class="err" id="b-err"></div>
+      <button class="btn primary" id="b-create">Создать бота</button>
+    </div>
+    <div class="panel"><h2>Боты <span class="tag" id="b-count"></span></h2><div id="bots-list"><div class="empty">Загрузка…</div></div></div>`;
+
+  $('#b-create').onclick = async () => {
+    const err = $('#b-err'); err.textContent = '';
+    const name = $('#b-name').value.trim();
+    const city = $('#b-city').value.trim();
+    if (!name) { err.textContent = 'Укажите имя'; return; }
+    if (!city) { err.textContent = 'Укажите город'; return; }
+    const btn = $('#b-create'); btn.disabled = true; btn.textContent = 'Создание…';
+    try {
+      const geo = await geocodeCity(city);
+      const langs = $('#b-langs').value.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+      const bot = await Backend.createBot({
+        name, age: +$('#b-age').value || null, gender: $('#b-gender').value,
+        city, lat: geo.lat, lng: geo.lng, langs,
+        behavior: $('#b-beh').value, active: $('#b-active').checked, verified: true,
+      });
+      const file = $('#b-photo').files[0];
+      if (file) { const url = await Backend.uploadBotPhoto(bot.id, file); await Backend.updateBot(bot.id, { photos: [url] }); }
+      toast('Бот создан'); renderBots();
+    } catch (e) { err.textContent = (e && (e.message || e)) || 'Ошибка'; btn.disabled = false; btn.textContent = 'Создать бота'; }
+  };
+
+  (async () => {
+    let bots = [];
+    try { bots = await Backend.listBots(); }
+    catch (e) { $('#bots-list').innerHTML = `<div class="warn">Не удалось загрузить: ${esc(e.message || e)}</div>`; return; }
+    $('#b-count').textContent = bots.length;
+    if (!bots.length) { $('#bots-list').innerHTML = '<div class="empty">Ботов пока нет</div>'; return; }
+    $('#bots-list').innerHTML = `
+      <table><thead><tr><th>Имя</th><th>Город</th><th>Поведение</th><th>Статус</th><th></th></tr></thead>
+      <tbody>${bots.map((b) => `<tr>
+        <td><div class="cellname">${(b.photos && b.photos[0]) ? `<img class="uava" src="${esc(b.photos[0])}" alt="">` : `<span class="uava uinit">${esc((b.name || '?').charAt(0).toUpperCase())}</span>`}<div><b>${esc(b.name)}</b>, ${b.age || '—'} <span class="tag approved">бот</span></div></div></td>
+        <td>${esc(b.city || '—')}</td>
+        <td><select class="botbeh" data-bot-beh="${b.id}"><option value="passive"${b.behavior === 'passive' ? ' selected' : ''}>В ленте</option><option value="autolike"${b.behavior === 'autolike' ? ' selected' : ''}>Лайкает всех</option></select></td>
+        <td><span class="tag ${b.active ? 'on' : 'off'}">${b.active ? 'активен' : 'выключен'}</span></td>
+        <td class="acts">
+          <button class="btn sm" data-bot-toggle="${b.id}" data-active="${b.active ? 1 : 0}">${b.active ? 'Выключить' : 'Включить'}</button>
+          <button class="btn sm danger" data-bot-del="${b.id}">Удалить</button>
+        </td>
+      </tr>`).join('')}</tbody></table>`;
+    $$('[data-bot-toggle]').forEach((btn) => {
+      btn.onclick = async () => { try { await Backend.updateBot(btn.dataset.botToggle, { active: btn.dataset.active !== '1' }); renderBots(); } catch (e) { toast('Ошибка: ' + (e.message || e)); } };
+    });
+    $$('[data-bot-del]').forEach((btn) => {
+      btn.onclick = async () => { if (!confirm('Удалить бота?')) return; try { await Backend.deleteBot(btn.dataset.botDel); toast('Бот удалён'); renderBots(); } catch (e) { toast('Ошибка: ' + (e.message || e)); } };
+    });
+    $$('[data-bot-beh]').forEach((sel) => {
+      sel.onchange = async () => { try { await Backend.updateBot(sel.dataset.botBeh, { behavior: sel.value }); toast('Поведение обновлено'); } catch (e) { toast('Ошибка: ' + (e.message || e)); } };
+    });
+  })();
 }
 
 /* ---------------- dates ---------------- */

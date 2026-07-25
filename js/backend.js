@@ -72,10 +72,14 @@
     async nearbyUsers(myGeo, radiusKm) {
       const { data: { user } } = await client.auth.getUser();
       const me = user ? user.id : '00000000-0000-0000-0000-000000000000';
-      const { data, error } = await client.from('profiles').select('id,name,age,gender,photos,lat,lng').neq('id', me);
-      if (error) throw error;
+      const [pr, bt] = await Promise.all([
+        client.from('profiles').select('id,name,age,gender,photos,lat,lng').neq('id', me),
+        client.from('bots').select('id,name,age,gender,photos,lat,lng,behavior').eq('active', true),
+      ]);
+      if (pr.error) throw pr.error;
       const hav = (a, b) => { const R = 6371, dLat = (b.lat - a.lat) * Math.PI / 180, dLng = (b.lng - a.lng) * Math.PI / 180, la1 = a.lat * Math.PI / 180, la2 = b.lat * Math.PI / 180; const x = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
-      let list = (data || []).map((u) => ({ ...u, km: (myGeo && u.lat != null && u.lng != null) ? hav(myGeo, { lat: u.lat, lng: u.lng }) : null }));
+      const rows = [...(pr.data || []), ...((bt.data || []).map((b) => ({ ...b, is_bot: true })))]; // bots table may not exist yet → bt.error ignored
+      let list = rows.map((u) => ({ ...u, km: (myGeo && u.lat != null && u.lng != null) ? hav(myGeo, { lat: u.lat, lng: u.lng }) : null }));
       if (myGeo) list = list.filter((u) => u.km == null || u.km <= radiusKm);
       return list.sort((a, b) => (a.km == null ? 1e9 : a.km) - (b.km == null ? 1e9 : b.km));
     },
@@ -171,6 +175,45 @@
       const { data, error } = await client.from('dates').select('*').order('created_at', { ascending: false });
       if (error) throw error;
       return data || [];
+    },
+
+    /* ---- account deletion ---- */
+    async deleteAccount() {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return;
+      for (const b of ['selfies', 'photos']) {
+        try { const { data } = await client.storage.from(b).list(user.id); if (data && data.length) await client.storage.from(b).remove(data.map((f) => `${user.id}/${f.name}`)); } catch { /* ignore */ }
+      }
+      const { error } = await client.rpc('delete_account');
+      if (error) throw error;
+      try { await client.auth.signOut(); } catch { /* ignore */ }
+    },
+
+    /* ---- bots (admin) ---- */
+    async createBot(bot) {
+      const { data, error } = await client.from('bots').insert(bot).select().single();
+      if (error) throw error;
+      return data;
+    },
+    async listBots() {
+      const { data, error } = await client.from('bots').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    async updateBot(id, patch) {
+      const { error } = await client.from('bots').update(patch).eq('id', id);
+      if (error) throw error;
+    },
+    async deleteBot(id) {
+      try { const { data } = await client.storage.from('photos').list('bots/' + id); if (data && data.length) await client.storage.from('photos').remove(data.map((f) => `bots/${id}/${f.name}`)); } catch { /* ignore */ }
+      const { error } = await client.from('bots').delete().eq('id', id);
+      if (error) throw error;
+    },
+    async uploadBotPhoto(botId, blob) {
+      const path = `bots/${botId}/photo-0.jpg`;
+      const up = await client.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+      if (up.error) throw up.error;
+      return client.storage.from('photos').getPublicUrl(path).data.publicUrl;
     },
   };
 

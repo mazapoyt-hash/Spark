@@ -161,7 +161,7 @@ let realPasses = new Set();   // ids I passed (this session/local)
 let realLoading = null;
 
 const hashHue = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; };
-const mapRealUser = (u) => ({ id: u.id, name: u.name || '—', age: u.age || '', gender: u.gender || '', langs: [], km: (u.km == null ? null : u.km), lat: u.lat, lng: u.lng, hues: [hashHue(u.id), (hashHue(u.id) + 40) % 360], _photos: u.photos || [], _real: true });
+const mapRealUser = (u) => ({ id: u.id, name: u.name || '—', age: u.age || '', gender: u.gender || '', langs: u.langs || [], km: (u.km == null ? null : u.km), lat: u.lat, lng: u.lng, hues: [hashHue(u.id), (hashHue(u.id) + 40) % 360], _photos: u.photos || [], _real: true, _bot: !!u.is_bot, _behavior: u.behavior || 'passive' });
 const rst = (id) => ({ online: true, likedMe: realLikedMe.has(id), iLiked: realLikes.has(id), declined: realPasses.has(id), dateId: null, note: null });
 const person = (id) => (REAL_DISCOVERY ? REAL_BY_ID[id] : DEMO_BY_ID[id]) || { name: '?', age: '', hues: [270, 300] };
 
@@ -179,6 +179,8 @@ async function loadRealDiscovery() {
     REAL_BY_ID = Object.fromEntries(REAL_PEOPLE.map((p) => [p.id, p]));
     realLikes = new Set(mine); realLikedMe = new Set(ofme);
     realPasses = new Set(APP_STATE.realPasses || []);
+    // autolike bots behave as if they already liked you (→ instant match on like-back)
+    REAL_PEOPLE.forEach((p) => { if (p._bot && p._behavior === 'autolike' && !realLikes.has(p.id)) realLikedMe.add(p.id); });
     REAL_DISCOVERY = true;
     return true;
   } catch (e) { REAL_DISCOVERY = false; try { console.warn('real discovery unavailable, using demo:', e.message || e); } catch { /* no console */ } return false; }
@@ -1354,7 +1356,7 @@ function openSettings() {
         : `<button class="srow-btn" id="st-install">${esc(t('s_install'))}
              <span class="sv" style="max-width:170px;text-align:right;font-size:11px">${esc(isIOS ? t('s_ios_hint') : t('s_install_hint'))}</span></button>`}
 
-      <button class="srow-btn" id="st-reset" style="color:var(--accent)">${esc(t('s_reset'))}</button>
+      <button class="srow-btn" id="st-delete" style="color:#f87171">${esc(t('s_delete'))}</button>
 
       <div class="about-box">${esc(t('s_about'))}</div>
     </div>`;
@@ -1381,11 +1383,15 @@ function openSettings() {
     if (deferredInstall) { deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; openSettings(); }
     else toast(isIOS ? t('s_ios_hint') : t('s_install_hint'));
   };
-  $('#st-reset').onclick = () => {
-    if (confirm(t('s_reset_confirm'))) {
-      localStorage.removeItem(LS_KEY);
-      location.reload();
+  $('#st-delete').onclick = async () => {
+    if (!confirm(t('s_delete_confirm'))) return;
+    const btn = $('#st-delete'); btn.style.opacity = '0.6';
+    if (window.Backend && Backend.enabled) {
+      try { await Backend.deleteAccount(); }
+      catch (e) { btn.style.opacity = ''; toast((e && (e.message || e)) || 'Ошибка'); return; }
     }
+    localStorage.clear();
+    location.reload();
   };
 }
 

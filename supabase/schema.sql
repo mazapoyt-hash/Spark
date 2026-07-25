@@ -176,3 +176,54 @@ create policy "photos write own" on storage.objects
 drop policy if exists "photos update own" on storage.objects;
 create policy "photos update own" on storage.objects
   for update using (bucket_id = 'photos' and (storage.foldername(name))[1] = auth.uid()::text);
+-- let users delete their own files (account deletion) and admins manage bot photos
+drop policy if exists "selfie delete own" on storage.objects;
+create policy "selfie delete own" on storage.objects
+  for delete using (bucket_id = 'selfies' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "photos delete own" on storage.objects;
+create policy "photos delete own" on storage.objects
+  for delete using (bucket_id = 'photos' and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin()));
+drop policy if exists "photos write admin" on storage.objects;
+create policy "photos write admin" on storage.objects
+  for insert with check (bucket_id = 'photos' and public.is_admin());
+drop policy if exists "photos update admin" on storage.objects;
+create policy "photos update admin" on storage.objects
+  for update using (bucket_id = 'photos' and public.is_admin());
+
+-- ---------- account deletion ----------
+-- Deletes the caller's auth user; all their rows cascade (profiles,
+-- verifications, dates; likes.user_id). Storage files are removed client-side
+-- first. SECURITY DEFINER so it can touch auth.users.
+create or replace function public.delete_account()
+returns void
+language plpgsql security definer set search_path = public, auth as $$
+begin
+  delete from auth.users where id = auth.uid();
+end $$;
+
+-- ---------- bots (admin-created fake profiles for discovery) ----------
+create table if not exists public.bots (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null,
+  age        int,
+  gender     text,
+  city       text,
+  lat        double precision,
+  lng        double precision,
+  langs      text[],
+  photos     text[],
+  verified   boolean not null default true,
+  active     boolean not null default true,
+  behavior   text not null default 'passive',   -- 'passive' | 'autolike'
+  created_at timestamptz not null default now()
+);
+alter table public.bots enable row level security;
+drop policy if exists "bots read active or admin" on public.bots;
+create policy "bots read active or admin" on public.bots
+  for select using (active = true or public.is_admin());
+drop policy if exists "bots admin write" on public.bots;
+create policy "bots admin write" on public.bots
+  for all using (public.is_admin()) with check (public.is_admin());
+
+-- allow likes to target a bot (not only auth users)
+alter table public.likes drop constraint if exists likes_target_id_fkey;

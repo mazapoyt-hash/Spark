@@ -25,6 +25,16 @@ Grant the browser **location permission** or distances fall back to "рядом"
 cinemas near the two people from keyless **OpenStreetMap Overpass**, and travel
 time comes from the keyless Valhalla router — no API key. No setup needed.
 
+**Bots**: the admin **Боты** section creates fake profiles (name, age, city →
+geocoded via keyless OSM Nominatim, languages, photo) that appear in discovery
+as verified people. Behavior `autolike` makes a bot like everyone nearby (so a
+real user gets an instant match on like-back). Toggle active / delete anytime.
+
+**Delete account**: the profile screen's button removes all of a user's data
+(profile, verifications, likes, dates, storage) and their auth user via the
+`delete_account()` function — make sure `schema.sql` has been re-run so that
+function and the storage-delete policies exist.
+
 ## 2. Allow your site URL (auth redirects)
 Dashboard → **Authentication → URL Configuration**:
 - **Site URL**: your deployed URL (e.g. `https://<user>.github.io/<repo>/`)
