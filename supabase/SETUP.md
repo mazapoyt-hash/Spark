@@ -21,6 +21,10 @@ their profile (with permission) and lists others within the search radius,
 with real distances. Likes are stored in `likes`; a mutual like is a match.
 Grant the browser **location permission** or distances fall back to "рядом".
 
+**Meeting places** are real: the date planner pulls actual cafes / parks /
+cinemas near the two people from keyless **OpenStreetMap Overpass**, and travel
+time comes from the keyless Valhalla router — no API key. No setup needed.
+
 ## 2. Allow your site URL (auth redirects)
 Dashboard → **Authentication → URL Configuration**:
 - **Site URL**: your deployed URL (e.g. `https://<user>.github.io/<repo>/`)

@@ -120,9 +120,13 @@ create table if not exists public.dates (
   date_iso   text,
   time       text,
   target     uuid,     -- the other real user (when applicable)
+  place_lat  double precision,
+  place_lng  double precision,
   created_at timestamptz not null default now()
 );
 alter table public.dates add column if not exists target uuid;
+alter table public.dates add column if not exists place_lat double precision;
+alter table public.dates add column if not exists place_lng double precision;
 alter table public.dates enable row level security;
 drop policy if exists "dates read own or admin" on public.dates;
 create policy "dates read own or admin" on public.dates

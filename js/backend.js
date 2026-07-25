@@ -160,11 +160,11 @@
     },
 
     /* ---- dates ---- */
-    async saveDate({ person, place, inside, dateISO, time, target }) {
+    async saveDate({ person, place, inside, dateISO, time, target, placeLat, placeLng }) {
       const { data: { user } } = await client.auth.getUser();
       if (!user) return; // only synced for real signed-in users
       const { error } = await client.from('dates')
-        .insert({ user_id: user.id, person, place, inside, date_iso: dateISO, time, target: target || null });
+        .insert({ user_id: user.id, person, place, inside, date_iso: dateISO, time, target: target || null, place_lat: placeLat ?? null, place_lng: placeLng ?? null });
       if (error) throw error;
     },
     async listDates() {

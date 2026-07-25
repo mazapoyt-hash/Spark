@@ -161,7 +161,7 @@ let realPasses = new Set();   // ids I passed (this session/local)
 let realLoading = null;
 
 const hashHue = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; };
-const mapRealUser = (u) => ({ id: u.id, name: u.name || '—', age: u.age || '', gender: u.gender || '', langs: [], km: (u.km == null ? null : u.km), hues: [hashHue(u.id), (hashHue(u.id) + 40) % 360], _photos: u.photos || [], _real: true });
+const mapRealUser = (u) => ({ id: u.id, name: u.name || '—', age: u.age || '', gender: u.gender || '', langs: [], km: (u.km == null ? null : u.km), lat: u.lat, lng: u.lng, hues: [hashHue(u.id), (hashHue(u.id) + 40) % 360], _photos: u.photos || [], _real: true });
 const rst = (id) => ({ online: true, likedMe: realLikedMe.has(id), iLiked: realLikes.has(id), declined: realPasses.has(id), dateId: null, note: null });
 const person = (id) => (REAL_DISCOVERY ? REAL_BY_ID[id] : DEMO_BY_ID[id]) || { name: '?', age: '', hues: [270, 300] };
 
@@ -515,10 +515,65 @@ const myLoc = () => USER_GEO || MY_LOCATION;
  *  we shift them by the same vector so distances stay realistic AND the
  *  route opened in Maps matches the in-app estimate. */
 function placeGeo(name) {
+  if (REAL_PLACE_GEO[name]) return REAL_PLACE_GEO[name]; // real OSM coordinates
   const g = PLACE_GEO[name];
   if (!g) return null;
   if (!USER_GEO) return { lat: g.lat, lng: g.lng };
   return { lat: g.lat + (USER_GEO.lat - MY_LOCATION.lat), lng: g.lng + (USER_GEO.lng - MY_LOCATION.lng) };
+}
+
+/* ---- real meeting places via keyless OpenStreetMap Overpass ----
+   Real cafes/restaurants/bars/cinemas (inside) and parks/viewpoints (outside)
+   around the midpoint of the two people, so travel time (via the router above)
+   is real. Public fair-use server; swap PLACES_URL for your own later.
+   Falls back to the demo place ideas when unavailable / no location. */
+const PLACES_URL = 'https://overpass-api.de/api/interpreter';
+let REAL_PLACES = null;              // { inside:[names], outside:[names] } once fetched
+const REAL_PLACE_GEO = {};           // name -> { lat, lng }
+const placesCache = new Map();       // rounded-center -> result
+
+async function fetchPlaces(center) {
+  const key = center.lat.toFixed(2) + ',' + center.lng.toFixed(2);
+  if (placesCache.has(key)) return placesCache.get(key);
+  const q = `[out:json][timeout:20];(`
+    + `node["amenity"~"^(cafe|restaurant|bar|pub|fast_food|ice_cream|cinema)$"](around:2500,${center.lat},${center.lng});`
+    + `node["leisure"~"^(park|garden)$"](around:2500,${center.lat},${center.lng});`
+    + `node["tourism"~"^(viewpoint|museum|gallery)$"](around:2500,${center.lat},${center.lng});`
+    + `);out 80;`;
+  const r = await fetch(PLACES_URL + '?data=' + encodeURIComponent(q));
+  if (!r.ok) throw new Error('overpass ' + r.status);
+  const els = (await r.json()).elements || [];
+  const seen = new Set(); const inside = []; const outside = [];
+  els.forEach((el) => {
+    const nm = el.tags && el.tags.name; if (!nm || seen.has(nm) || el.lat == null) return;
+    seen.add(nm);
+    REAL_PLACE_GEO[nm] = { lat: el.lat, lng: el.lon };
+    const out = /park|garden/.test(el.tags.leisure || '') || /viewpoint/.test(el.tags.tourism || '');
+    const d = haversineKm(center, { lat: el.lat, lng: el.lon });
+    (out ? outside : inside).push({ nm, d });
+  });
+  const top = (arr) => arr.sort((a, b) => a.d - b.d).slice(0, 12).map((x) => x.nm);
+  const result = { inside: top(inside), outside: top(outside) };
+  placesCache.set(key, result);
+  return result;
+}
+
+/* the place pool for the wizard — real POIs when available, else demo ideas */
+function placePool(inside) {
+  const real = REAL_PLACES && (inside ? REAL_PLACES.inside : REAL_PLACES.outside);
+  return (real && real.length) ? real : PLACE_IDEAS[inside ? 'inside' : 'outside'];
+}
+
+/* fetch real places around the midpoint of me + the matched partner */
+async function ensureWizardPlaces(w) {
+  if (!(window.Backend && Backend.enabled)) return; // demo mode keeps demo ideas
+  const partner = REAL_BY_ID[w.pid];
+  let center = null;
+  if (USER_GEO && partner && partner.lat != null && partner.lng != null) {
+    center = { lat: (USER_GEO.lat + partner.lat) / 2, lng: (USER_GEO.lng + partner.lng) / 2 };
+  } else if (USER_GEO) { center = USER_GEO; }
+  if (!center) return; // no location → demo fallback
+  try { REAL_PLACES = await fetchPlaces(center); } catch { /* keep demo ideas */ }
 }
 
 const routeKm = (geo) => haversineKm(myLoc(), geo) * 1.3; // rough road factor
@@ -983,7 +1038,7 @@ function askYesNo(mapName) {
   return new Promise((res) => {
     const zone = wzZone();
     zone.innerHTML = `
-      ${mapName && PLACE_GEO[mapName] ? `<button class="btn btn-ghost btn-sm" data-map="${esc(mapName)}" style="margin-bottom:14px">${svgIcon('pin')} ${esc(t('map_view'))}</button>` : ''}
+      ${mapName && placeGeo(mapName) ? `<button class="btn btn-ghost btn-sm" data-map="${esc(mapName)}" style="margin-bottom:14px">${svgIcon('pin')} ${esc(t('map_view'))}</button>` : ''}
       <div class="wz-q" style="font-size:17px">${esc(t('w_you_sure'))}</div>
       <div class="seg">
         <button class="wz-opt" id="yn-no">${svgIcon('x')} ${esc(t('w_no'))}</button>
@@ -1057,8 +1112,10 @@ async function wizardIChoose(w, name) {
 
   /* Q3 where exactly */
   wzStep(3); wzLogClear();
+  await ensureWizardPlaces(w);
+  wzGuard(w);
   wzQ(t('w_q3'));
-  const pool = PLACE_IDEAS[w.inside ? 'inside' : 'outside'];
+  const pool = placePool(w.inside);
   w.place = await wzInput(t('w_q3_ph'), pool.slice(0, 3));
   wzGuard(w);
   meSays(w.place);
@@ -1115,8 +1172,10 @@ async function wizardTheyChoose(w, name) {
 
   /* Q3 */
   wzStep(3); wzLogClear();
+  await ensureWizardPlaces(w);
+  wzGuard(w);
   wzQ(t('w_q3_ask', { name }));
-  const pool = PLACE_IDEAS[w.inside ? 'inside' : 'outside'];
+  const pool = placePool(w.inside);
   const offers = [pickOf(pool)];
   offers.push(pickOf(pool.filter((x) => x !== offers[0])));
   await theyPropose(w, name, offers, (v) => { w.place = v; }, async () => {
@@ -1148,10 +1207,12 @@ async function wizardTheyChoose(w, name) {
 }
 
 async function wizardDone(w, p) {
+  const pg = placeGeo(w.place); // real OSM coords if the place is real
   const d = {
     id: 'd' + Date.now(),
     personId: w.pid,
     place: w.place, inside: w.inside,
+    placeLat: pg ? pg.lat : null, placeLng: pg ? pg.lng : null,
     dateISO: w.dateISO, time: w.time,
     createdAt: Date.now(),
   };
@@ -1160,7 +1221,7 @@ async function wizardDone(w, p) {
   save();
   // Real mode: sync the scheduled date so it shows in the admin.
   if (window.Backend && Backend.enabled) {
-    Backend.saveDate({ person: p.name, place: w.place, inside: w.inside, dateISO: w.dateISO, time: w.time, target: REAL_DISCOVERY ? w.pid : null })
+    Backend.saveDate({ person: p.name, place: w.place, inside: w.inside, dateISO: w.dateISO, time: w.time, target: REAL_DISCOVERY ? w.pid : null, placeLat: d.placeLat, placeLng: d.placeLng })
       .catch(() => { /* non-fatal */ });
   }
 
@@ -1670,6 +1731,9 @@ function enterMain() {
 
 function boot() {
   renderStatic();
+
+  // restore real place coordinates from saved dates so their map/route works
+  (APP_STATE.dates || []).forEach((d) => { if (d.place && d.placeLat != null) REAL_PLACE_GEO[d.place] = { lat: d.placeLat, lng: d.placeLng }; });
 
   $$('.tab').forEach((b) => { b.onclick = () => switchTab(b.dataset.tab); });
   $('#btn-settings').onclick = openSettings;
