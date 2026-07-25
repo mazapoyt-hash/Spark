@@ -14,6 +14,9 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now()
 );
 alter table public.profiles add column if not exists photos text[];
+alter table public.profiles add column if not exists lat double precision;
+alter table public.profiles add column if not exists lng double precision;
+alter table public.profiles add column if not exists geo_updated_at timestamptz;
 alter table public.profiles enable row level security;
 
 drop policy if exists "profiles read own" on public.profiles;
@@ -25,6 +28,10 @@ create policy "profiles insert own" on public.profiles
 drop policy if exists "profiles update own" on public.profiles;
 create policy "profiles update own" on public.profiles
   for update using (auth.uid() = id);
+-- any signed-in user can read profiles (needed for discovery of nearby people)
+drop policy if exists "profiles read authed" on public.profiles;
+create policy "profiles read authed" on public.profiles
+  for select using (auth.uid() is not null);
 -- admins can read and edit any profile (to moderate / fix applicant data)
 drop policy if exists "profiles read admin" on public.profiles;
 create policy "profiles read admin" on public.profiles
@@ -83,6 +90,26 @@ drop policy if exists "verif update admin" on public.verifications;
 create policy "verif update admin" on public.verifications
   for update using (public.is_admin());
 
+-- ---------- likes (real discovery) ----------
+create table if not exists public.likes (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users(id) on delete cascade,   -- who liked
+  target_id  uuid not null references auth.users(id) on delete cascade,   -- who was liked
+  created_at timestamptz not null default now(),
+  unique (user_id, target_id)
+);
+alter table public.likes enable row level security;
+-- you can see the likes you sent and the likes you received (to know matches)
+drop policy if exists "likes read own or target" on public.likes;
+create policy "likes read own or target" on public.likes
+  for select using (auth.uid() = user_id or auth.uid() = target_id);
+drop policy if exists "likes insert own" on public.likes;
+create policy "likes insert own" on public.likes
+  for insert with check (auth.uid() = user_id);
+drop policy if exists "likes delete own" on public.likes;
+create policy "likes delete own" on public.likes
+  for delete using (auth.uid() = user_id);
+
 -- ---------- dates (scheduled meetings) ----------
 create table if not exists public.dates (
   id         uuid primary key default gen_random_uuid(),
@@ -92,8 +119,14 @@ create table if not exists public.dates (
   inside     boolean,
   date_iso   text,
   time       text,
+  target     uuid,     -- the other real user (when applicable)
+  place_lat  double precision,
+  place_lng  double precision,
   created_at timestamptz not null default now()
 );
+alter table public.dates add column if not exists target uuid;
+alter table public.dates add column if not exists place_lat double precision;
+alter table public.dates add column if not exists place_lng double precision;
 alter table public.dates enable row level security;
 drop policy if exists "dates read own or admin" on public.dates;
 create policy "dates read own or admin" on public.dates
@@ -129,3 +162,17 @@ create policy "selfie update own" on storage.objects
   for update using (
     bucket_id = 'selfies' and (storage.foldername(name))[1] = auth.uid()::text
   );
+
+-- ---------- public bucket for profile photos (shown to other users) ----------
+insert into storage.buckets (id, name, public)
+  values ('photos', 'photos', true)
+  on conflict (id) do nothing;
+drop policy if exists "photos read all" on storage.objects;
+create policy "photos read all" on storage.objects
+  for select using (bucket_id = 'photos');
+drop policy if exists "photos write own" on storage.objects;
+create policy "photos write own" on storage.objects
+  for insert with check (bucket_id = 'photos' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "photos update own" on storage.objects;
+create policy "photos update own" on storage.objects
+  for update using (bucket_id = 'photos' and (storage.foldername(name))[1] = auth.uid()::text);

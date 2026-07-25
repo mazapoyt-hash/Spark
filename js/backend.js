@@ -49,18 +49,55 @@
       const { error } = await client.from('profiles').upsert({ id: user.id, name, age, gender });
       if (error) throw error;
       // Photos are best-effort; a failure here must not drop the profile row.
+      // They go in the PUBLIC 'photos' bucket so other users can see them in
+      // discovery; we store their public URLs.
       if (photoBlobs && photoBlobs.length) {
         try {
-          const paths = [];
+          const urls = [];
           for (let i = 0; i < photoBlobs.length; i++) {
             const path = `${user.id}/photo-${i}.jpg`;
-            const up = await client.storage.from('selfies').upload(path, photoBlobs[i], { contentType: 'image/jpeg', upsert: true });
+            const up = await client.storage.from('photos').upload(path, photoBlobs[i], { contentType: 'image/jpeg', upsert: true });
             if (up.error) throw up.error;
-            paths.push(path);
+            urls.push(client.storage.from('photos').getPublicUrl(path).data.publicUrl);
           }
-          await client.from('profiles').update({ photos: paths }).eq('id', user.id);
+          await client.from('profiles').update({ photos: urls }).eq('id', user.id);
         } catch (e) { try { console.warn('profile photos upload failed:', e.message || e); } catch { /* no console */ } }
       }
+    },
+    async updateMyGeo(lat, lng) {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return;
+      await client.from('profiles').update({ lat, lng, geo_updated_at: new Date().toISOString() }).eq('id', user.id);
+    },
+    async nearbyUsers(myGeo, radiusKm) {
+      const { data: { user } } = await client.auth.getUser();
+      const me = user ? user.id : '00000000-0000-0000-0000-000000000000';
+      const { data, error } = await client.from('profiles').select('id,name,age,gender,photos,lat,lng').neq('id', me);
+      if (error) throw error;
+      const hav = (a, b) => { const R = 6371, dLat = (b.lat - a.lat) * Math.PI / 180, dLng = (b.lng - a.lng) * Math.PI / 180, la1 = a.lat * Math.PI / 180, la2 = b.lat * Math.PI / 180; const x = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
+      let list = (data || []).map((u) => ({ ...u, km: (myGeo && u.lat != null && u.lng != null) ? hav(myGeo, { lat: u.lat, lng: u.lng }) : null }));
+      if (myGeo) list = list.filter((u) => u.km == null || u.km <= radiusKm);
+      return list.sort((a, b) => (a.km == null ? 1e9 : a.km) - (b.km == null ? 1e9 : b.km));
+    },
+    async like(targetId) {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) throw new Error('not signed in');
+      const { error } = await client.from('likes').upsert({ user_id: user.id, target_id: targetId }, { onConflict: 'user_id,target_id' });
+      if (error) throw error;
+    },
+    async myLikes() {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return [];
+      const { data, error } = await client.from('likes').select('target_id').eq('user_id', user.id);
+      if (error) throw error;
+      return (data || []).map((x) => x.target_id);
+    },
+    async likesOfMe() {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return [];
+      const { data, error } = await client.from('likes').select('user_id').eq('target_id', user.id);
+      if (error) throw error;
+      return (data || []).map((x) => x.user_id);
     },
     async mediaUrl(path) { // download any object from the selfies bucket → object URL
       const { data, error } = await client.storage.from('selfies').download(path);
@@ -123,11 +160,11 @@
     },
 
     /* ---- dates ---- */
-    async saveDate({ person, place, inside, dateISO, time }) {
+    async saveDate({ person, place, inside, dateISO, time, target, placeLat, placeLng }) {
       const { data: { user } } = await client.auth.getUser();
       if (!user) return; // only synced for real signed-in users
       const { error } = await client.from('dates')
-        .insert({ user_id: user.id, person, place, inside, date_iso: dateISO, time });
+        .insert({ user_id: user.id, person, place, inside, date_iso: dateISO, time, target: target || null, place_lat: placeLat ?? null, place_lng: placeLng ?? null });
       if (error) throw error;
     },
     async listDates() {
