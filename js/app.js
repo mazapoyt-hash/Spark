@@ -179,8 +179,9 @@ async function loadRealDiscovery() {
     REAL_BY_ID = Object.fromEntries(REAL_PEOPLE.map((p) => [p.id, p]));
     realLikes = new Set(mine); realLikedMe = new Set(ofme);
     realPasses = new Set(APP_STATE.realPasses || []);
-    // autolike bots behave as if they already liked you (→ instant match on like-back)
-    REAL_PEOPLE.forEach((p) => { if (p._bot && p._behavior === 'autolike' && !realLikes.has(p.id)) realLikedMe.add(p.id); });
+    // bots "like back": autolike bots appear to have liked you already; any bot
+    // you've liked counts as a mutual match (so it persists in Встреча).
+    REAL_PEOPLE.forEach((p) => { if (p._bot && (p._behavior === 'autolike' || realLikes.has(p.id))) realLikedMe.add(p.id); });
     REAL_DISCOVERY = true;
     return true;
   } catch (e) { REAL_DISCOVERY = false; try { console.warn('real discovery unavailable, using demo:', e.message || e); } catch { /* no console */ } return false; }
@@ -398,7 +399,9 @@ function deckAction(id, liked) {
     if (liked) {
       realLikes.add(id);
       Backend.like(id).catch(() => {});
-      if (realLikedMe.has(id)) onMutualLike(id); // they already liked me → match
+      const isBot = REAL_BY_ID[id] && REAL_BY_ID[id]._bot;
+      if (isBot) realLikedMe.add(id);            // bots always like back
+      if (isBot || realLikedMe.has(id)) onMutualLike(id); // → match
     } else {
       realPasses.add(id); APP_STATE.realPasses = [...realPasses];
     }
