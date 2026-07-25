@@ -362,8 +362,9 @@ async function openProfileEdit(r) {
     const grid = $('#ep-photos');
     if (!grid || !photos.length) return;
     try {
-      const urls = await Promise.all(photos.map((p) => Backend.mediaUrl(p)));
-      grid.innerHTML = urls.map((u) => `<img src="${u}" alt="">`).join('');
+      // profile photos are public URLs (photos bucket); legacy ones are private paths
+      const urls = await Promise.all(photos.map(async (p) => (/^https?:/i.test(p) ? p : await Backend.mediaUrl(p))));
+      grid.innerHTML = urls.map((u) => `<img src="${esc(u)}" alt="">`).join('');
       $$('img', grid).forEach((im) => { im.onclick = () => window.open(im.src, '_blank'); });
     } catch { grid.innerHTML = '<span class="cmpwait">не удалось загрузить</span>'; }
   })();
