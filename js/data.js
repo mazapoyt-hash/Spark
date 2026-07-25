@@ -105,60 +105,67 @@ const VERIFY_GESTURES = [
   { id: 'thumb', ups: [0, 0, 0, 0], thumb: 'up' },
 ];
 
-/* ---- hand illustration (clean, friendly, palm-to-camera) ---- */
-const _STROKE = '#c98f66';               // soft skin outline
-const _CREASE = 'rgba(120,66,36,0.22)';  // knuckle/joint lines
-// finger geometry: centre-x, width, fingertip-y when raised
+/* ---- hand illustration ----------------------------------------------
+   Minimal single-colour glyph in the app's own line-icon language: one soft
+   lavender hand on the neon card, thin unified outline, tapered fingers.
+   Palm faces the camera; thumbs-up is drawn as a proper fist. */
+const _LINE = 'rgba(76,44,120,0.9)'; // unified outline (violet-ink)
+const _LW = 3;
+// finger geometry: centre-x, base half-width, tip half-width, fingertip-y up
 const _FINGERS = [
-  { cx: 118, w: 28, tip: 104 }, // index
-  { cx: 148, w: 30, tip: 84 },  // middle (longest)
-  { cx: 178, w: 29, tip: 100 }, // ring
-  { cx: 206, w: 24, tip: 132 }, // pinky
+  { cx: 116, wb: 15, wt: 12, tip: 112 }, // index
+  { cx: 147, wb: 16, wt: 12, tip: 92 },  // middle (longest)
+  { cx: 178, wb: 15, wt: 12, tip: 106 }, // ring
+  { cx: 206, wb: 13, wt: 10, tip: 140 }, // pinky
 ];
-const _BASE = 214; // finger root (tucked under the palm)
+const _KNUCK = 210; // knuckle line where fingers meet the palm
 
+/** a tapered, round-tipped finger from the knuckle line up to `tip` */
 function _fingerUp(f) {
-  const x = f.cx - f.w / 2, h = _BASE - f.tip;
-  return `<rect x="${x}" y="${f.tip}" width="${f.w}" height="${h}" rx="${f.w / 2}" fill="url(#sk)" stroke="${_STROKE}" stroke-width="2.5"/>`
-    + `<ellipse cx="${f.cx}" cy="${f.tip + 15}" rx="${f.w / 2 - 6}" ry="9" fill="#fff" opacity="0.32"/>`
-    + `<path d="M${x + 4} ${f.tip + 46} q ${f.w / 2 - 4} 8 ${f.w - 8} 0" fill="none" stroke="${_CREASE}" stroke-width="2" stroke-linecap="round"/>`;
+  const { cx, wb, wt, tip } = f;
+  return `<path d="M${cx - wb} ${_KNUCK} `
+    + `L${cx - wt} ${tip + wt} Q${cx - wt} ${tip} ${cx} ${tip} `
+    + `Q${cx + wt} ${tip} ${cx + wt} ${tip + wt} `
+    + `L${cx + wb} ${_KNUCK} Z" fill="url(#skin)" stroke="${_LINE}" stroke-width="${_LW}" stroke-linejoin="round"/>`;
 }
+/** a folded finger: a low rounded knuckle sitting on the palm top */
 function _fingerFold(f) {
-  const x = f.cx - f.w / 2;
-  return `<rect x="${x}" y="184" width="${f.w}" height="42" rx="${f.w / 2}" fill="url(#sk2)" stroke="${_STROKE}" stroke-width="2.5"/>`
-    + `<path d="M${x + 2} 200 q ${f.w / 2 - 2} 8 ${f.w - 4} 0" fill="none" stroke="${_CREASE}" stroke-width="2" stroke-linecap="round"/>`;
+  const { cx, wb } = f;
+  return `<path d="M${cx - wb} ${_KNUCK} L${cx - wb} 196 Q${cx - wb} 182 ${cx} 182 `
+    + `Q${cx + wb} 182 ${cx + wb} 196 L${cx + wb} ${_KNUCK} Z" fill="url(#skinF)" stroke="${_LINE}" stroke-width="${_LW}" stroke-linejoin="round"/>`;
 }
 
 /** full hand for a gesture (palm-to-camera, or a fist for thumbs-up) */
 function handArt(g) {
-  // thumbs-up is a distinct pose: a fist with the thumb pointing up
+  // thumbs-up: a fist (rounded block + curled-finger ridges) with thumb up
   if (g.thumb === 'up') {
     return `
-      <rect x="150" y="118" width="40" height="112" rx="20" fill="url(#sk)" stroke="${_STROKE}" stroke-width="2.5" transform="rotate(-7 170 174)"/>
-      <ellipse cx="167" cy="132" rx="11" ry="9" fill="#fff" opacity="0.3" transform="rotate(-7 167 132)"/>
-      <rect x="104" y="196" width="122" height="132" rx="40" fill="url(#sk)" stroke="${_STROKE}" stroke-width="2.5"/>
-      ${[122, 150, 178, 205].map((cx, i) => `<rect x="${cx - 13}" y="200" width="26" height="46" rx="13" fill="url(#sk2)" stroke="${_STROKE}" stroke-width="2" transform="rotate(${(i - 1.5) * 3} ${cx} 223)"/>`).join('')}
-      <path d="M112 250 q 55 16 108 0" fill="none" stroke="${_CREASE}" stroke-width="2.5" stroke-linecap="round"/>
-      <path d="M150 214 q 6 -12 22 -12" fill="none" stroke="${_CREASE}" stroke-width="2.5" stroke-linecap="round"/>`;
+      <path d="M150 210 q0 -92 30 -92 q26 0 26 44 l0 48 Z"
+            fill="url(#skin)" stroke="${_LINE}" stroke-width="${_LW}" stroke-linejoin="round"/>
+      <rect x="102" y="196" width="128" height="132" rx="40" fill="url(#skin)" stroke="${_LINE}" stroke-width="${_LW}"/>
+      ${[133, 165, 197].map((x) => `<line x1="${x}" y1="202" x2="${x}" y2="250" stroke="${_LINE}" stroke-width="2.4" stroke-linecap="round" opacity="0.55"/>`).join('')}
+      <path d="M110 250 q56 20 112 0" fill="none" stroke="${_LINE}" stroke-width="2.6" stroke-linecap="round" opacity="0.55"/>
+      <path d="M150 210 q4 -14 22 -15" fill="none" stroke="${_LINE}" stroke-width="2.4" stroke-linecap="round" opacity="0.5"/>`;
   }
   let s = '';
-  // wrist / cuff first (behind the palm)
-  s += `<rect x="118" y="300" width="94" height="72" rx="26" fill="url(#cuff)"/>`;
-  s += `<rect x="120" y="292" width="90" height="40" rx="20" fill="url(#sk)" stroke="${_STROKE}" stroke-width="2.5"/>`;
-  // palm
-  s += `<rect x="104" y="196" width="122" height="120" rx="42" fill="url(#sk)" stroke="${_STROKE}" stroke-width="2.5"/>`;
-  // palm creases (subtle life-lines)
-  s += `<path d="M132 230 q 26 30 12 66" fill="none" stroke="${_CREASE}" stroke-width="2.5" stroke-linecap="round"/>`;
-  s += `<path d="M198 232 q -20 26 -18 60" fill="none" stroke="${_CREASE}" stroke-width="2.5" stroke-linecap="round"/>`;
+  // cuff + wrist behind the palm
+  s += `<path d="M116 300 h68 a24 24 0 0 1 24 24 v52 h-116 v-52 a24 24 0 0 1 24 -24 Z" fill="url(#cuff)"/>`;
+  s += `<rect x="120" y="292" width="90" height="34" rx="17" fill="url(#skin)" stroke="${_LINE}" stroke-width="${_LW}"/>`;
+  // fingers first, then the palm overlaps their base so it reads as one shape
+  s += g.ups.map((up, i) => (up ? _fingerUp(_FINGERS[i]) : _fingerFold(_FINGERS[i]))).join('');
   // thumb
   if (g.thumb === 'out') {
-    s += `<rect x="60" y="238" width="78" height="30" rx="15" fill="url(#sk)" stroke="${_STROKE}" stroke-width="2.5" transform="rotate(-24 138 253)"/>`;
-    s += `<ellipse cx="76" cy="248" rx="9" ry="6" fill="#fff" opacity="0.3" transform="rotate(-24 76 248)"/>`;
-  } else { // tucked across the palm
-    s += `<rect x="96" y="250" width="96" height="30" rx="15" fill="url(#sk2)" stroke="${_STROKE}" stroke-width="2.5" transform="rotate(9 150 265)"/>`;
+    s += `<path d="M104 240 Q74 222 56 232 Q44 239 49 252 Q56 267 81 266 L106 270 Z"
+             fill="url(#skin)" stroke="${_LINE}" stroke-width="${_LW}" stroke-linejoin="round"/>`;
+  } else { // tucked across the lower palm
+    s += `<path d="M104 262 Q150 246 196 268 Q198 286 180 288 Q150 278 116 284 Q100 284 104 262 Z"
+             fill="url(#skinF)" stroke="${_LINE}" stroke-width="${_LW}" stroke-linejoin="round"/>`;
   }
-  // fingers on top of the palm
-  s += g.ups.map((up, i) => (up ? _fingerUp(_FINGERS[i]) : _fingerFold(_FINGERS[i]))).join('');
+  // palm (drawn over the finger roots)
+  s += `<path d="M100 214 Q100 196 120 196 H210 Q230 196 230 218 V292 Q230 318 200 318 H130 Q100 318 100 292 Z"
+           fill="url(#skin)" stroke="${_LINE}" stroke-width="${_LW}" stroke-linejoin="round"/>`;
+  // re-draw the raised fingers' lower edge so the palm seam disappears
+  s += g.ups.map((up, i) => (up ? `<line x1="${_FINGERS[i].cx - _FINGERS[i].wb}" y1="${_KNUCK}" x2="${_FINGERS[i].cx + _FINGERS[i].wb}" y2="${_KNUCK}" stroke="url(#skin)" stroke-width="${_LW + 1}"/>` : '')).join('');
   return s;
 }
 
@@ -170,21 +177,21 @@ function gestureSVG(id) {
 <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
 <stop offset="0" stop-color="#1a1330"/><stop offset="1" stop-color="#100c1a"/>
 </linearGradient>
-<radialGradient id="glow" cx="0.5" cy="0.46" r="0.6">
-<stop offset="0" stop-color="rgba(168,85,247,0.4)"/><stop offset="1" stop-color="rgba(168,85,247,0)"/>
+<radialGradient id="glow" cx="0.5" cy="0.44" r="0.62">
+<stop offset="0" stop-color="rgba(168,85,247,0.42)"/><stop offset="1" stop-color="rgba(168,85,247,0)"/>
 </radialGradient>
-<linearGradient id="sk" x1="0" y1="0" x2="1" y2="1">
-<stop offset="0" stop-color="#ffe7d2"/><stop offset="1" stop-color="#f0c6a3"/>
+<linearGradient id="skin" x1="0" y1="0" x2="0.4" y2="1">
+<stop offset="0" stop-color="#f6f1ff"/><stop offset="1" stop-color="#e4d7fb"/>
 </linearGradient>
-<linearGradient id="sk2" x1="0" y1="0" x2="1" y2="1">
-<stop offset="0" stop-color="#f4d3b6" /><stop offset="1" stop-color="#e3b48d"/>
+<linearGradient id="skinF" x1="0" y1="0" x2="0.4" y2="1">
+<stop offset="0" stop-color="#e6dbfa"/><stop offset="1" stop-color="#d3c2f2"/>
 </linearGradient>
 <linearGradient id="cuff" x1="0" y1="0" x2="1" y2="1">
 <stop offset="0" stop-color="#a855f7"/><stop offset="1" stop-color="#7c3aed"/>
 </linearGradient>
 </defs>
 <rect x="6" y="6" width="288" height="368" rx="34" fill="url(#card)"/>
-<circle cx="150" cy="188" r="132" fill="url(#glow)"/>
+<circle cx="150" cy="190" r="134" fill="url(#glow)"/>
 <circle cx="52" cy="52" r="2.4" fill="rgba(255,255,255,0.7)"/>
 <circle cx="248" cy="84" r="1.8" fill="hsla(268,90%,82%,0.85)"/>
 <circle cx="60" cy="330" r="1.6" fill="rgba(255,255,255,0.5)"/>
