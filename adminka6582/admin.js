@@ -327,6 +327,7 @@ async function openProfileEdit(r) {
   const name = (prof && prof.name) || r.name || '';
   const age = (prof && prof.age) || r.age || '';
   const gender = (prof && prof.gender) || '';
+  const photos = (prof && prof.photos) || [];
   const m = $('#modal');
   m.classList.remove('hidden');
   m.onclick = null; // don't close on backdrop while editing
@@ -334,6 +335,10 @@ async function openProfileEdit(r) {
     <div class="editcard">
       <h3>Профиль заявителя</h3>
       <div class="muted" style="font-size:11.5px;margin:-4px 0 4px;word-break:break-all">${esc(r.userId)}</div>
+      <div class="cmp">
+        <figure class="cmpcol"><div class="cmpbox" id="ep-selfie"><span class="cmpwait">Селфи…</span></div><figcaption>Селфи с верификации</figcaption></figure>
+        <figure class="cmpcol"><div class="cmpgrid" id="ep-photos">${photos.length ? '<span class="cmpwait">Фото…</span>' : '<span class="cmpwait">Нет фото анкеты</span>'}</div><figcaption>Фото анкеты</figcaption></figure>
+      </div>
       <label>Имя<input id="ep-name" value="${esc(name)}"></label>
       <label>Возраст<input id="ep-age" type="number" min="18" max="99" value="${esc(age)}"></label>
       <label>Пол<select id="ep-gender"><option value="">—</option><option value="w">Женский</option><option value="m">Мужской</option></select></label>
@@ -343,6 +348,23 @@ async function openProfileEdit(r) {
       </div>
     </div>`;
   $('#ep-gender').value = gender;
+  // load the verification selfie for side-by-side comparison
+  (async () => {
+    try {
+      const url = shotUrls.get(r.id) || (r.selfie_path ? await Backend.selfieUrl(r.selfie_path) : null);
+      if (url) { shotUrls.set(r.id, url); const box = $('#ep-selfie'); if (box) { box.innerHTML = `<img src="${url}" alt="">`; box.querySelector('img').onclick = () => window.open(url, '_blank'); } }
+    } catch { const box = $('#ep-selfie'); if (box) box.innerHTML = '<span class="cmpwait">н/д</span>'; }
+  })();
+  // load the applicant's profile photos
+  (async () => {
+    const grid = $('#ep-photos');
+    if (!grid || !photos.length) return;
+    try {
+      const urls = await Promise.all(photos.map((p) => Backend.mediaUrl(p)));
+      grid.innerHTML = urls.map((u) => `<img src="${u}" alt="">`).join('');
+      $$('img', grid).forEach((im) => { im.onclick = () => window.open(im.src, '_blank'); });
+    } catch { grid.innerHTML = '<span class="cmpwait">не удалось загрузить</span>'; }
+  })();
   $('#ep-cancel').onclick = () => m.classList.add('hidden');
   $('#ep-save').onclick = async () => {
     const patch = { name: $('#ep-name').value.trim(), age: +$('#ep-age').value || null, gender: $('#ep-gender').value || null };
