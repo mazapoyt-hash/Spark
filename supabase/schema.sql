@@ -23,6 +23,16 @@ create policy "profiles insert own" on public.profiles
 drop policy if exists "profiles update own" on public.profiles;
 create policy "profiles update own" on public.profiles
   for update using (auth.uid() = id);
+-- admins can read and edit any profile (to moderate / fix applicant data)
+drop policy if exists "profiles read admin" on public.profiles;
+create policy "profiles read admin" on public.profiles
+  for select using (public.is_admin());
+drop policy if exists "profiles insert admin" on public.profiles;
+create policy "profiles insert admin" on public.profiles
+  for insert with check (public.is_admin());
+drop policy if exists "profiles update admin" on public.profiles;
+create policy "profiles update admin" on public.profiles
+  for update using (public.is_admin());
 
 -- ---------- admins ----------
 -- A user is an admin iff they have a row here. Add yourself AFTER signing in

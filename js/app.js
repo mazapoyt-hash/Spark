@@ -1272,9 +1272,38 @@ async function downscalePhoto(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 
+/* Registration step (real mode): sign in before filling the profile form. */
+function showOnboardAuth() {
+  $('#ob-welcome').classList.add('hidden');
+  $('#ob-form').classList.add('hidden');
+  const box = $('#ob-auth');
+  box.classList.remove('hidden');
+  box.innerHTML = `
+    <div class="ve-card">
+      <div class="ve-h">${esc(t('reg_title'))}</div>
+      <p class="ve-sub">${esc(t('reg_sub'))}</p>
+      <button class="btn btn-ghost" id="oa-google">${esc(t('auth_google'))}</button>
+      <div class="ve-or">${esc(t('auth_or'))}</div>
+      <input class="input" id="oa-email" type="email" inputmode="email" autocomplete="email" placeholder="${esc(t('auth_email_ph'))}">
+      <button class="btn btn-primary" id="oa-email-btn">${esc(t('auth_email'))}</button>
+      <p class="ve-note" id="oa-note"></p>
+      <button class="btn btn-ghost btn-sm" id="oa-back">${esc(t('ob_back'))}</button>
+    </div>`;
+  const note = (m) => { $('#oa-note').textContent = m; };
+  $('#oa-google').onclick = () => Backend.signInOAuth('google').catch((e) => note(e.message || e));
+  $('#oa-email-btn').onclick = async () => {
+    const em = $('#oa-email').value.trim(); if (!em) return;
+    const b = $('#oa-email-btn'); b.disabled = true;
+    try { await Backend.signInEmail(em); note(t('auth_sent')); }
+    catch (e) { note(e.message || e); b.disabled = false; }
+  };
+  $('#oa-back').onclick = () => { box.classList.add('hidden'); $('#ob-welcome').classList.remove('hidden'); };
+}
+
 function openProfileEditor(isFirstRun = false) {
   const pr = APP_STATE.profile;
   $('#ob-welcome').classList.add('hidden');
+  const oa = $('#ob-auth'); if (oa) oa.classList.add('hidden');
   $('#ob-form').classList.remove('hidden');
   $('#onboarding').classList.remove('hidden');
   $('#main').classList.add('hidden');
@@ -1338,6 +1367,10 @@ function openProfileEditor(isFirstRun = false) {
     });
 
     save();
+    // Real mode: mirror the profile into Supabase so the admin can view/edit it.
+    if (window.Backend && Backend.enabled) {
+      try { await Backend.upsertProfile({ name, age, gender: pr.gender }); } catch { /* non-fatal */ }
+    }
     if (isFirstRun) {
       startVerification(() => {
         APP_STATE.onboarded = true;
@@ -1377,7 +1410,6 @@ function startVerification(onDone) {
         <div class="ve-h">${esc(t('auth_needed'))}</div>
         <p class="ve-sub">${esc(t('auth_sub'))}</p>
         <button class="btn btn-ghost" id="ve-google">${esc(t('auth_google'))}</button>
-        <button class="btn btn-ghost" id="ve-apple">${esc(t('auth_apple'))}</button>
         <div class="ve-or">${esc(t('auth_or'))}</div>
         <input class="input" id="ve-email" type="email" inputmode="email" autocomplete="email" placeholder="${esc(t('auth_email_ph'))}">
         <button class="btn btn-primary" id="ve-email-btn">${esc(t('auth_email'))}</button>
@@ -1386,7 +1418,6 @@ function startVerification(onDone) {
       </div>`;
     const note = (m) => { $('#ve-auth-note').textContent = m; };
     $('#ve-google').onclick = () => Backend.signInOAuth('google').catch((e) => note(e.message || e));
-    $('#ve-apple').onclick = () => Backend.signInOAuth('apple').catch((e) => note(e.message || e));
     $('#ve-email-btn').onclick = async () => {
       const em = $('#ve-email').value.trim(); if (!em) return;
       const b = $('#ve-email-btn'); b.disabled = true;
@@ -1557,10 +1588,22 @@ function boot() {
 
   $$('.tab').forEach((b) => { b.onclick = () => switchTab(b.dataset.tab); });
   $('#btn-settings').onclick = openSettings;
-  $('#ob-start').onclick = () => openProfileEditor(true);
+  $('#ob-start').onclick = () => {
+    if (window.Backend && Backend.enabled) showOnboardAuth();
+    else openProfileEditor(true);
+  };
 
+  const backendOn = !!(window.Backend && Backend.enabled);
   if (APP_STATE.onboarded) {
     enterMain();
+  } else if (backendOn) {
+    // Real mode: registration (sign-in) comes first. If already signed in
+    // (e.g. returned from an OAuth/email link), jump to the profile form.
+    $('#onboarding').classList.remove('hidden'); $('#main').classList.add('hidden');
+    $('#ob-form').classList.add('hidden'); $('#ob-auth').classList.add('hidden');
+    Backend.user().then((u) => { if (u) openProfileEditor(true); else $('#ob-welcome').classList.remove('hidden'); })
+      .catch(() => $('#ob-welcome').classList.remove('hidden'));
+    Backend.onAuth((u) => { if (u && !APP_STATE.onboarded && $('#main').classList.contains('hidden')) openProfileEditor(true); });
   } else {
     $('#onboarding').classList.remove('hidden');
     $('#main').classList.add('hidden');
