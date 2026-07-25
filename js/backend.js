@@ -68,6 +68,11 @@
       if (error) throw error;
       return data;
     },
+    async listUsers() { // admins can read every profile
+      const { data, error } = await client.from('profiles').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
     async updateProfileAsAdmin(userId, patch) { // admin edits an applicant's profile
       const { error } = await client.from('profiles').upsert({ id: userId, ...patch });
       if (error) throw error;

@@ -348,12 +348,14 @@ async function openProfileEdit(r) {
       </div>
     </div>`;
   $('#ep-gender').value = gender;
-  // load the verification selfie for side-by-side comparison
+  // load the verification selfie for side-by-side comparison (if any)
   (async () => {
+    const box = $('#ep-selfie'); if (!box) return;
     try {
-      const url = shotUrls.get(r.id) || (r.selfie_path ? await Backend.selfieUrl(r.selfie_path) : null);
-      if (url) { shotUrls.set(r.id, url); const box = $('#ep-selfie'); if (box) { box.innerHTML = `<img src="${url}" alt="">`; box.querySelector('img').onclick = () => window.open(url, '_blank'); } }
-    } catch { const box = $('#ep-selfie'); if (box) box.innerHTML = '<span class="cmpwait">н/д</span>'; }
+      const url = (r.id && shotUrls.get(r.id)) || (r.selfie_path ? await Backend.selfieUrl(r.selfie_path) : null);
+      if (url) { if (r.id) shotUrls.set(r.id, url); box.innerHTML = `<img src="${url}" alt="">`; box.querySelector('img').onclick = () => window.open(url, '_blank'); }
+      else box.innerHTML = '<span class="cmpwait">нет селфи</span>';
+    } catch { box.innerHTML = '<span class="cmpwait">н/д</span>'; }
   })();
   // load the applicant's profile photos
   (async () => {
@@ -371,7 +373,7 @@ async function openProfileEdit(r) {
     const btn = $('#ep-save'); btn.disabled = true;
     try {
       await Backend.updateProfileAsAdmin(r.userId, patch);
-      await Backend.updateVerificationMeta(r.id, { name: patch.name, age: patch.age });
+      if (r.id) await Backend.updateVerificationMeta(r.id, { name: patch.name, age: patch.age });
       m.classList.add('hidden'); toast('Профиль обновлён'); renderApp();
     } catch (e) { btn.disabled = false; toast('Ошибка: ' + (e.message || e)); }
   };
@@ -441,6 +443,40 @@ function setUserStatus(status) {
   renderApp();
 }
 function renderUsers() {
+  if (REAL) return renderUsersReal();
+  return renderUsersDemo();
+}
+
+/* Real registered users from Supabase (profiles table). */
+function renderUsersReal() {
+  $('#content').innerHTML = `
+    <div class="h1">Пользователи</div>
+    <div class="sub">Зарегистрированные пользователи (Supabase).</div>
+    <div class="panel" id="users-panel"><div class="empty">Загрузка…</div></div>`;
+  (async () => {
+    let users = [];
+    try { users = await Backend.listUsers(); }
+    catch (e) { $('#users-panel').innerHTML = `<div class="warn">Не удалось загрузить: ${esc(e.message || e)}</div>`; return; }
+    if (!users.length) { $('#users-panel').innerHTML = '<div class="empty">Пока нет зарегистрированных пользователей</div>'; return; }
+    // latest verification status per user (VERIFS is sorted newest-first)
+    const vmap = {}; verifList().forEach((v) => { if (!(v.userId in vmap)) vmap[v.userId] = v.status; });
+    const gsym = (g) => (g === 'w' ? 'Ж' : g === 'm' ? 'М' : '—');
+    $('#users-panel').innerHTML = `
+      <table><thead><tr><th>Имя</th><th>Пол</th><th>Верификация</th><th>Регистрация</th><th></th></tr></thead>
+      <tbody>${users.map((u) => `<tr>
+        <td><div class="cellname"><span class="uava uinit">${esc((u.name || '?').trim().charAt(0).toUpperCase())}</span><div><b>${esc(u.name || '—')}</b>, ${u.age || '—'}</div></div></td>
+        <td>${gsym(u.gender)}</td>
+        <td>${vmap[u.id] ? `<span class="tag ${vmap[u.id]}">${stName(vmap[u.id])}</span>` : '<span class="tag off">нет</span>'}</td>
+        <td class="muted">${fmtTime(u.created_at ? Date.parse(u.created_at) : 0)}</td>
+        <td class="acts"><button class="btn sm" data-user="${u.id}">Профиль</button></td>
+      </tr>`).join('')}</tbody></table>`;
+    $$('[data-user]').forEach((b) => {
+      b.onclick = () => { const u = users.find((x) => x.id === b.dataset.user); openProfileEdit({ userId: u.id, id: null, name: u.name, age: u.age }); };
+    });
+  })();
+}
+
+function renderUsersDemo() {
   const st = loadState();
   const people = (st && st.people) || {};
   const demo = typeof DEMO_PEOPLE !== 'undefined' ? DEMO_PEOPLE : [];
