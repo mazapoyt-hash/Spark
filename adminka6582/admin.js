@@ -43,7 +43,7 @@ const loadVerifs = () => { try { return JSON.parse(localStorage.getItem(VKEY)) |
 const saveVerifs = (l) => { try { localStorage.setItem(VKEY, JSON.stringify(l)); } catch { /* quota */ } };
 const fmtTime = (ts) => (ts ? new Date(ts).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
 const langList = (codes) => (codes || []).map((c) => (typeof LANG_NAMES !== 'undefined' && LANG_NAMES[c]) || c).join(' · ');
-const gname = (id) => ({ palm: 'Открытая ладонь', peace: 'Знак мира', three: 'Три пальца', thumb: 'Палец вверх' }[id] || id);
+const gname = (id) => ({ palm: 'Открытая ладонь', peace: 'Знак мира', ok: 'Жест ОК', thumb: 'Палец вверх' }[id] || id);
 const stName = (st) => ({ pending: 'На проверке', approved: 'Подтверждён', rejected: 'Отклонён' }[st] || 'нет');
 
 function toast(text) {
@@ -77,7 +77,6 @@ function renderLogin() {
         <input id="pw" type="password" placeholder="Пароль" autocomplete="off">
         <div class="err" id="le"></div>
         <button class="btn primary block" id="lb" type="submit">Войти</button>
-        <p class="note">Аккаунты администраторов заданы жёстко. Заявки на верификацию (селфи) зашифрованы и расшифровываются только здесь, после входа. Полноценные роли и общая база — в Фазе 2 (Supabase).</p>
       </form>
     </div>`;
   $('#lf').onsubmit = async (e) => {
@@ -207,7 +206,7 @@ function renderVerif() {
       <div class="vcard ${r.status}">
         <div class="vhead"><b>${esc(r.name)}, ${r.age}</b><span class="tag ${r.status}">${stName(r.status)}</span></div>
         <div class="vshots">
-          <figure><img src="${gestureSVG(r.gestureId)}" data-zoom="${gestureSVG(r.gestureId)}" alt=""><figcaption>Пример: ${gname(r.gestureId)}</figcaption></figure>
+          <figure><div class="gex">${gestureEmoji(r.gestureId)}</div><figcaption>Пример: ${gname(r.gestureId)}</figcaption></figure>
           <figure><img id="selfie-${r.id}" alt="" data-selfie="${r.id}"><figcaption>Селфи</figcaption></figure>
         </div>
         ${extra.length ? `<div class="vmore">${extra.map((p) => `<img class="vthumb" src="${esc(p)}" data-zoom="${esc(p)}" alt="">`).join('')}</div>` : ''}

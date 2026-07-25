@@ -217,9 +217,9 @@ const NEAR_KM = 3;
 
 /* satellite slots around the central card (percent + size px) */
 const ORBIT_SLOTS = [
-  { x: 20, y: 8, s: 66 }, { x: 80, y: 10, s: 72 },
-  { x: 7, y: 42, s: 74 }, { x: 94, y: 38, s: 60 },
-  { x: 16, y: 86, s: 58 }, { x: 86, y: 82, s: 70 },
+  { x: 21, y: 9, s: 58 }, { x: 79, y: 8, s: 62 },
+  { x: 8, y: 31, s: 54 }, { x: 92, y: 30, s: 52 },
+  { x: 19, y: 90, s: 52 }, { x: 81, y: 89, s: 58 },
 ];
 const ORBIT_STARS = [
   [8, 18], [30, 4], [55, 7], [88, 24], [96, 62],
@@ -1374,7 +1374,7 @@ function startVerification(onDone) {
         <div class="ve-pair">
           <div class="ve-col">
             <div class="ve-cap">${esc(t('ve_example'))}</div>
-            <div class="ve-frame"><img src="${gestureSVG(g.id)}" alt=""></div>
+            <div class="ve-frame ve-ex"><span class="ve-emoji">${gestureEmoji(g.id)}</span></div>
           </div>
           <div class="ve-col">
             <div class="ve-cap">${esc(t('ve_your'))}</div>
