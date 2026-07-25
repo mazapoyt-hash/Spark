@@ -83,6 +83,28 @@ drop policy if exists "verif update admin" on public.verifications;
 create policy "verif update admin" on public.verifications
   for update using (public.is_admin());
 
+-- ---------- dates (scheduled meetings) ----------
+create table if not exists public.dates (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  person     text,     -- who the date is with (demo partner name for now)
+  place      text,
+  inside     boolean,
+  date_iso   text,
+  time       text,
+  created_at timestamptz not null default now()
+);
+alter table public.dates enable row level security;
+drop policy if exists "dates read own or admin" on public.dates;
+create policy "dates read own or admin" on public.dates
+  for select using (auth.uid() = user_id or public.is_admin());
+drop policy if exists "dates insert own" on public.dates;
+create policy "dates insert own" on public.dates
+  for insert with check (auth.uid() = user_id);
+drop policy if exists "dates delete own or admin" on public.dates;
+create policy "dates delete own or admin" on public.dates
+  for delete using (auth.uid() = user_id or public.is_admin());
+
 -- ---------- private storage bucket for selfies ----------
 insert into storage.buckets (id, name, public)
   values ('selfies', 'selfies', false)

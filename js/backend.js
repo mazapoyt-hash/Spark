@@ -44,19 +44,23 @@
     async upsertProfile({ name, age, gender, photoBlobs }) {
       const { data: { user } } = await client.auth.getUser();
       if (!user) throw new Error('not signed in');
-      const row = { id: user.id, name, age, gender };
-      if (photoBlobs && photoBlobs.length) {
-        const paths = [];
-        for (let i = 0; i < photoBlobs.length; i++) {
-          const path = `${user.id}/photo-${i}.jpg`;
-          const up = await client.storage.from('selfies').upload(path, photoBlobs[i], { contentType: 'image/jpeg', upsert: true });
-          if (up.error) throw up.error;
-          paths.push(path);
-        }
-        row.photos = paths;
-      }
-      const { error } = await client.from('profiles').upsert(row);
+      // Core profile first, on its own — so the user always lands in the admin
+      // even if the photo upload (storage policy / column) isn't ready.
+      const { error } = await client.from('profiles').upsert({ id: user.id, name, age, gender });
       if (error) throw error;
+      // Photos are best-effort; a failure here must not drop the profile row.
+      if (photoBlobs && photoBlobs.length) {
+        try {
+          const paths = [];
+          for (let i = 0; i < photoBlobs.length; i++) {
+            const path = `${user.id}/photo-${i}.jpg`;
+            const up = await client.storage.from('selfies').upload(path, photoBlobs[i], { contentType: 'image/jpeg', upsert: true });
+            if (up.error) throw up.error;
+            paths.push(path);
+          }
+          await client.from('profiles').update({ photos: paths }).eq('id', user.id);
+        } catch (e) { try { console.warn('profile photos upload failed:', e.message || e); } catch { /* no console */ } }
+      }
     },
     async mediaUrl(path) { // download any object from the selfies bucket → object URL
       const { data, error } = await client.storage.from('selfies').download(path);
@@ -116,6 +120,20 @@
         .update({ status, comment: comment || '', reviewed_at: new Date().toISOString(), reviewer: reviewerId })
         .eq('id', id);
       if (error) throw error;
+    },
+
+    /* ---- dates ---- */
+    async saveDate({ person, place, inside, dateISO, time }) {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return; // only synced for real signed-in users
+      const { error } = await client.from('dates')
+        .insert({ user_id: user.id, person, place, inside, date_iso: dateISO, time });
+      if (error) throw error;
+    },
+    async listDates() {
+      const { data, error } = await client.from('dates').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
     },
   };
 
