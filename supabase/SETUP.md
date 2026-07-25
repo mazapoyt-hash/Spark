@@ -9,8 +9,10 @@ Project: `https://tuhzhghwsontzmseatgj.supabase.co`
 ## 1. Create the schema
 Dashboard → **SQL Editor** → **New query** → paste all of
 [`schema.sql`](./schema.sql) → **Run**.
-This creates `profiles`, `verifications`, `admins`, the `is_admin()` function,
-the private **`selfies`** storage bucket and all Row-Level-Security policies.
+This creates `profiles`, `verifications`, `dates`, `admins`, the `is_admin()`
+function, the private **`selfies`** storage bucket and all Row-Level-Security
+policies. The script is **idempotent — re-run it whenever `schema.sql` changes**
+(e.g. after pulling an update that adds a table or column).
 
 ## 2. Allow your site URL (auth redirects)
 Dashboard → **Authentication → URL Configuration**:

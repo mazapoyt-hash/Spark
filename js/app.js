@@ -1082,6 +1082,11 @@ async function wizardDone(w, p) {
   APP_STATE.dates.push(d);
   dyn(w.pid).dateId = d.id;
   save();
+  // Real mode: sync the scheduled date so it shows in the admin.
+  if (window.Backend && Backend.enabled) {
+    Backend.saveDate({ person: p.name, place: w.place, inside: w.inside, dateISO: w.dateISO, time: w.time })
+      .catch(() => { /* non-fatal */ });
+  }
 
   wzLogClear();
   wzStep(5);

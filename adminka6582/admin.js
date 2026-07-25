@@ -454,20 +454,25 @@ function renderUsersReal() {
     <div class="sub">Зарегистрированные пользователи (Supabase).</div>
     <div class="panel" id="users-panel"><div class="empty">Загрузка…</div></div>`;
   (async () => {
-    let users = [];
-    try { users = await Backend.listUsers(); }
+    let profs = [];
+    try { profs = await Backend.listUsers(); }
     catch (e) { $('#users-panel').innerHTML = `<div class="warn">Не удалось загрузить: ${esc(e.message || e)}</div>`; return; }
-    if (!users.length) { $('#users-panel').innerHTML = '<div class="empty">Пока нет зарегистрированных пользователей</div>'; return; }
-    // latest verification status per user (VERIFS is sorted newest-first)
+    // Merge in anyone who filed a verification but has no profile row yet, so
+    // no registered user is missing from the list.
     const vmap = {}; verifList().forEach((v) => { if (!(v.userId in vmap)) vmap[v.userId] = v.status; });
+    const byId = new Map();
+    profs.forEach((u) => byId.set(u.id, { ...u }));
+    verifList().forEach((v) => { if (!byId.has(v.userId)) byId.set(v.userId, { id: v.userId, name: v.name, age: v.age, gender: null, created_at: null, _noprofile: true }); });
+    const users = [...byId.values()];
+    if (!users.length) { $('#users-panel').innerHTML = '<div class="empty">Пока нет зарегистрированных пользователей</div>'; return; }
     const gsym = (g) => (g === 'w' ? 'Ж' : g === 'm' ? 'М' : '—');
     $('#users-panel').innerHTML = `
       <table><thead><tr><th>Имя</th><th>Пол</th><th>Верификация</th><th>Регистрация</th><th></th></tr></thead>
       <tbody>${users.map((u) => `<tr>
-        <td><div class="cellname"><span class="uava uinit">${esc((u.name || '?').trim().charAt(0).toUpperCase())}</span><div><b>${esc(u.name || '—')}</b>, ${u.age || '—'}</div></div></td>
+        <td><div class="cellname"><span class="uava uinit">${esc((u.name || '?').trim().charAt(0).toUpperCase())}</span><div><b>${esc(u.name || '—')}</b>, ${u.age || '—'}${u._noprofile ? ' <span class="tag off">без анкеты</span>' : ''}</div></div></td>
         <td>${gsym(u.gender)}</td>
         <td>${vmap[u.id] ? `<span class="tag ${vmap[u.id]}">${stName(vmap[u.id])}</span>` : '<span class="tag off">нет</span>'}</td>
-        <td class="muted">${fmtTime(u.created_at ? Date.parse(u.created_at) : 0)}</td>
+        <td class="muted">${u.created_at ? fmtTime(Date.parse(u.created_at)) : '—'}</td>
         <td class="acts"><button class="btn sm" data-user="${u.id}">Профиль</button></td>
       </tr>`).join('')}</tbody></table>`;
     $$('[data-user]').forEach((b) => {
@@ -525,6 +530,33 @@ function renderUsersDemo() {
 
 /* ---------------- dates ---------------- */
 function renderDates() {
+  if (REAL) return renderDatesReal();
+  return renderDatesDemo();
+}
+
+/* Real scheduled dates from Supabase. */
+function renderDatesReal() {
+  $('#content').innerHTML = `
+    <div class="h1">Свидания</div>
+    <div class="sub">Запланированные встречи пользователей (Supabase).</div>
+    <div class="panel" id="dates-panel"><div class="empty">Загрузка…</div></div>`;
+  (async () => {
+    let dates = [];
+    try { dates = await Backend.listDates(); }
+    catch (e) { $('#dates-panel').innerHTML = `<div class="warn">Не удалось загрузить: ${esc(e.message || e)}</div>`; return; }
+    if (!dates.length) { $('#dates-panel').innerHTML = '<div class="empty">Свиданий нет</div>'; return; }
+    $('#dates-panel').innerHTML = `
+      <table><thead><tr><th>С кем</th><th>Место</th><th>Когда</th><th>Создано</th></tr></thead>
+      <tbody>${dates.map((d) => `<tr>
+        <td><b>${esc(d.person || '—')}</b></td>
+        <td>${esc(d.place || '—')} · ${d.inside ? 'в помещении' : 'на улице'}</td>
+        <td>${esc(d.date_iso || '')} · ${esc(d.time || '')}</td>
+        <td class="muted">${d.created_at ? fmtTime(Date.parse(d.created_at)) : '—'}</td>
+      </tr>`).join('')}</tbody></table>`;
+  })();
+}
+
+function renderDatesDemo() {
   const st = loadState();
   const dates = (st && st.dates) || [];
   const byId = typeof DEMO_BY_ID !== 'undefined' ? DEMO_BY_ID : Object.fromEntries((typeof DEMO_PEOPLE !== 'undefined' ? DEMO_PEOPLE : []).map((p) => [p.id, p]));
