@@ -31,8 +31,32 @@ const IV_B64 = '6i+y1mSzimkDJjnI';
 
 const LS_KEY = 'dateme.v1';
 const VKEY = 'dateme.verifications';
-let ADMIN_PRIV = null;        // unwrapped RSA private key, in-memory only
-const selfieCache = new Map(); // verifId → decrypted data-URL (this session)
+let ADMIN_PRIV = null;        // unwrapped RSA private key, in-memory only (demo)
+const selfieCache = new Map(); // verifId → decrypted data-URL (this session, demo)
+
+/* Real backend (Supabase) mode. When enabled, admins sign in with a real
+   account and the moderation queue + selfies come from Supabase (RLS makes
+   selfies readable only by their owner or an admin). See supabase/SETUP.md. */
+const REAL = !!(window.Backend && window.Backend.enabled);
+let VERIFS = [];             // real moderation queue
+let ADMIN_USER = null;       // signed-in Supabase admin user
+const shotUrls = new Map();  // verifId → object URL for real selfies
+
+function normVerif(r) {
+  return {
+    id: r.id, userId: r.user_id, name: r.name, age: r.age,
+    gestureId: r.gesture_id, selfie_path: r.selfie_path,
+    status: r.status, comment: r.comment || '',
+    createdAt: r.created_at ? Date.parse(r.created_at) : 0,
+    reviewedAt: r.reviewed_at ? Date.parse(r.reviewed_at) : null,
+  };
+}
+const verifList = () => (REAL ? VERIFS : loadVerifs());
+async function refreshVerifs() {
+  if (!REAL) return;
+  try { VERIFS = (await Backend.listVerifications()).map(normVerif); }
+  catch (e) { VERIFS = []; toast('Не удалось загрузить заявки: ' + (e.message || e)); }
+}
 
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
@@ -43,7 +67,7 @@ const loadVerifs = () => { try { return JSON.parse(localStorage.getItem(VKEY)) |
 const saveVerifs = (l) => { try { localStorage.setItem(VKEY, JSON.stringify(l)); } catch { /* quota */ } };
 const fmtTime = (ts) => (ts ? new Date(ts).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
 const langList = (codes) => (codes || []).map((c) => (typeof LANG_NAMES !== 'undefined' && LANG_NAMES[c]) || c).join(' · ');
-const gname = (id) => ({ palm: 'Открытая ладонь', peace: 'Знак мира', three: 'Три пальца', thumb: 'Палец вверх' }[id] || id);
+const gname = (id) => ({ palm: 'Открытая ладонь', peace: 'Знак мира', ok: 'Жест ОК', thumb: 'Палец вверх' }[id] || id);
 const stName = (st) => ({ pending: 'На проверке', approved: 'Подтверждён', rejected: 'Отклонён' }[st] || 'нет');
 
 function toast(text) {
@@ -65,9 +89,57 @@ function zoom(src) {
    hardcoded account hash and (b) unwraps the RSA private key. Only when the
    key unwraps successfully is access granted — so a wrong password can never
    reveal selfies even if the hash check were bypassed. */
-const isAuthed = () => !!ADMIN_PRIV;
+const isAuthed = () => (REAL ? !!ADMIN_USER : !!ADMIN_PRIV);
 
+/* Real (Supabase) login: email magic-link + Google/Apple. Access is granted
+   only if the signed-in account is in the `admins` table (checked in route). */
 function renderLogin() {
+  if (!REAL) return renderLoginDemo();
+  $('#app').innerHTML = `
+    <div class="login">
+      <form class="login-card" id="lf">
+        <div class="brand">DATE&nbsp;ME <span>ADMIN</span></div>
+        <p class="muted">Вход для администраторов</p>
+        <button type="button" class="btn block" id="g-google">Войти через Google</button>
+        <button type="button" class="btn block" id="g-apple">Войти через Apple</button>
+        <div class="or">или по e-mail</div>
+        <input id="em" type="email" placeholder="E-mail" autocomplete="email" autocapitalize="off" spellcheck="false" autofocus>
+        <div class="err" id="le"></div>
+        <button class="btn primary block" id="lb" type="submit">Прислать ссылку для входа</button>
+        <p class="note" id="ln"></p>
+      </form>
+    </div>`;
+  const fail = (e) => { $('#le').textContent = (e && (e.message || e)) || 'Ошибка входа'; };
+  $('#g-google').onclick = () => Backend.signInOAuth('google').catch(fail);
+  $('#g-apple').onclick = () => Backend.signInOAuth('apple').catch(fail);
+  $('#lf').onsubmit = async (e) => {
+    e.preventDefault();
+    const email = $('#em').value.trim(); if (!email) return;
+    const btn = $('#lb'); btn.disabled = true; btn.textContent = 'Отправляем…'; $('#le').textContent = '';
+    try {
+      await Backend.signInEmail(email);
+      $('#ln').textContent = 'Ссылка для входа отправлена на ' + email + '. Откройте её на этом устройстве.';
+    } catch (err) { fail(err); btn.disabled = false; btn.textContent = 'Прислать ссылку для входа'; }
+  };
+}
+
+/* signed in, but the account is not an admin */
+function renderNotAdmin(u) {
+  $('#app').innerHTML = `
+    <div class="login">
+      <div class="login-card">
+        <div class="brand">DATE&nbsp;ME <span>ADMIN</span></div>
+        <p class="muted">Вы вошли как<br><b>${esc(u.email || u.id)}</b></p>
+        <div class="warn" style="text-align:left">Этот аккаунт не администратор. Добавьте его в таблицу <code>admins</code> в Supabase (см. supabase/SETUP.md), затем обновите страницу.</div>
+        <button class="btn block" id="logout">Выйти</button>
+      </div>
+    </div>`;
+  $('#logout').onclick = async () => { await Backend.signOut(); ADMIN_USER = null; renderLogin(); };
+}
+
+/* Demo login (used only when Supabase isn't configured): hardcoded account +
+   RSA-unwrap of the selfie key. */
+function renderLoginDemo() {
   $('#app').innerHTML = `
     <div class="login">
       <form class="login-card" id="lf">
@@ -77,7 +149,6 @@ function renderLogin() {
         <input id="pw" type="password" placeholder="Пароль" autocomplete="off">
         <div class="err" id="le"></div>
         <button class="btn primary block" id="lb" type="submit">Войти</button>
-        <p class="note">Аккаунты администраторов заданы жёстко. Заявки на верификацию (селфи) зашифрованы и расшифровываются только здесь, после входа. Полноценные роли и общая база — в Фазе 2 (Supabase).</p>
       </form>
     </div>`;
   $('#lf').onsubmit = async (e) => {
@@ -107,7 +178,8 @@ function renderLogin() {
 let section = 'dash';
 const SECTIONS = [['dash', 'Дашборд'], ['verif', 'Верификации'], ['users', 'Пользователи'], ['dates', 'Свидания'], ['ctrl', 'Управление']];
 
-function renderApp() {
+async function renderApp() {
+  await refreshVerifs();
   $('#app').innerHTML = `
     <div class="admin">
       <aside class="side">
@@ -118,11 +190,14 @@ function renderApp() {
       <main class="content" id="content"></main>
     </div>`;
   $$('.nav[data-s]').forEach((b) => { b.onclick = () => { section = b.dataset.s; renderApp(); }; });
-  $('#logout').onclick = () => { ADMIN_PRIV = null; selfieCache.clear(); renderLogin(); };
+  $('#logout').onclick = async () => {
+    if (REAL) { try { await Backend.signOut(); } catch { /* ignore */ } ADMIN_USER = null; }
+    ADMIN_PRIV = null; selfieCache.clear(); shotUrls.clear(); renderLogin();
+  };
   renderSection();
 }
 function pendingBadge() {
-  const n = loadVerifs().filter((r) => r.status === 'pending').length;
+  const n = verifList().filter((r) => r.status === 'pending').length;
   return n ? ` <span class="tag pending" style="margin-left:6px">${n}</span>` : '';
 }
 function renderSection() {
@@ -132,7 +207,7 @@ function renderSection() {
 /* ---------------- dashboard ---------------- */
 function renderDash() {
   const st = loadState();
-  const vs = loadVerifs();
+  const vs = verifList();
   const people = (st && st.people) || {};
   const demo = typeof DEMO_PEOPLE !== 'undefined' ? DEMO_PEOPLE : [];
   const online = demo.filter((p) => people[p.id] && people[p.id].online).length;
@@ -143,7 +218,7 @@ function renderDash() {
   const stat = (n, l, hot) => `<div class="stat ${hot ? 'hot' : ''}"><div class="n">${n}</div><div class="l">${l}</div></div>`;
   $('#content').innerHTML = `
     <div class="h1">Дашборд</div>
-    <div class="sub">Обзор состояния приложения (демо-данные этого браузера).</div>
+    <div class="sub">${REAL ? 'Заявки на верификацию — из Supabase. Демо-люди/свидания — локальные.' : 'Обзор состояния приложения (демо-данные этого браузера).'}</div>
     <div class="stats">
       ${stat(vs.filter((r) => r.status === 'pending').length, 'Заявок на проверке', true)}
       ${stat(cnt('approved'), 'Подтверждено')}
@@ -168,11 +243,18 @@ function renderDash() {
 
 /* ---------------- verifications (with comment to client) ---------------- */
 function decide(id, act) {
+  const comment = ($('#cm-' + id) ? $('#cm-' + id).value : '').trim();
+  const status = act === 'approve' ? 'approved' : 'rejected';
+  if (act === 'reject' && !comment) { toast('Напишите, что не так с фото'); $('#cm-' + id) && $('#cm-' + id).focus(); return; }
+  if (REAL) {
+    Backend.decide(id, status, comment, ADMIN_USER && ADMIN_USER.id)
+      .then(() => { toast(act === 'approve' ? 'Заявка одобрена' : 'Заявка отклонена'); renderApp(); })
+      .catch((e) => toast('Ошибка: ' + (e.message || e)));
+    return;
+  }
   const list = loadVerifs();
   const r = list.find((x) => x.id === id);
   if (!r) return;
-  const comment = ($('#cm-' + id) ? $('#cm-' + id).value : '').trim();
-  if (act === 'reject' && !comment) { toast('Напишите, что не так с фото'); $('#cm-' + id) && $('#cm-' + id).focus(); return; }
   r.status = act === 'approve' ? 'approved' : 'rejected';
   r.comment = comment;
   r.reviewedAt = Date.now();
@@ -193,7 +275,7 @@ function decide(id, act) {
 function renderVerif() {
   const st = loadState();
   const myPhotos = (st && st.profile && st.profile.photos) || [];
-  const list = loadVerifs().slice().sort((a, b) => {
+  const list = verifList().slice().sort((a, b) => {
     if ((a.status === 'pending') !== (b.status === 'pending')) return a.status === 'pending' ? -1 : 1;
     return (b.createdAt || 0) - (a.createdAt || 0);
   });
@@ -207,7 +289,7 @@ function renderVerif() {
       <div class="vcard ${r.status}">
         <div class="vhead"><b>${esc(r.name)}, ${r.age}</b><span class="tag ${r.status}">${stName(r.status)}</span></div>
         <div class="vshots">
-          <figure><img src="${gestureSVG(r.gestureId)}" data-zoom="${gestureSVG(r.gestureId)}" alt=""><figcaption>Пример: ${gname(r.gestureId)}</figcaption></figure>
+          <figure><div class="gex">${gestureEmoji(r.gestureId)}</div><figcaption>Пример: ${gname(r.gestureId)}</figcaption></figure>
           <figure><img id="selfie-${r.id}" alt="" data-selfie="${r.id}"><figcaption>Селфи</figcaption></figure>
         </div>
         ${extra.length ? `<div class="vmore">${extra.map((p) => `<img class="vthumb" src="${esc(p)}" data-zoom="${esc(p)}" alt="">`).join('')}</div>` : ''}
@@ -234,28 +316,41 @@ function renderVerif() {
   list.forEach((r) => paintSelfie(r));
 }
 
-/** Decrypt a request's selfie and drop it into its <img> (async, cached). */
+/** Load a request's selfie into its <img>. Real mode downloads from the
+    private bucket (RLS-gated to admins); demo mode decrypts locally. Cached. */
 async function paintSelfie(r) {
   const img = $('#selfie-' + r.id);
   if (!img) return;
-  let url = selfieCache.get(r.id);
-  if (!url) {
-    try {
-      if (r.enc) url = await decryptSelfie(r.enc, ADMIN_PRIV);
-      else if (r.selfie) url = r.selfie; // legacy plaintext request
-      else throw new Error('no data');
-      selfieCache.set(r.id, url);
-    } catch {
-      img.replaceWith(Object.assign(document.createElement('div'), { className: 'selfie-fail', textContent: 'Не удалось расшифровать' }));
-      return;
+  try {
+    let url;
+    if (REAL) {
+      url = shotUrls.get(r.id);
+      if (!url) { url = await Backend.selfieUrl(r.selfie_path); shotUrls.set(r.id, url); }
+    } else {
+      url = selfieCache.get(r.id);
+      if (!url) {
+        if (r.enc) url = await decryptSelfie(r.enc, ADMIN_PRIV);
+        else if (r.selfie) url = r.selfie; // legacy plaintext request
+        else throw new Error('no data');
+        selfieCache.set(r.id, url);
+      }
     }
+    if (!url) throw new Error('no data');
+    img.src = url;
+    img.dataset.zoom = url;
+    img.style.cursor = 'zoom-in';
+    img.onclick = () => zoom(url);
+  } catch {
+    img.replaceWith(Object.assign(document.createElement('div'), { className: 'selfie-fail', textContent: REAL ? 'Не удалось загрузить' : 'Не удалось расшифровать' }));
   }
-  img.src = url;
-  img.dataset.zoom = url;
-  img.style.cursor = 'zoom-in';
-  img.onclick = () => zoom(url);
 }
 function reopen(id) {
+  if (REAL) {
+    Backend.decide(id, 'pending', '', ADMIN_USER && ADMIN_USER.id)
+      .then(() => renderApp())
+      .catch((e) => toast('Ошибка: ' + (e.message || e)));
+    return;
+  }
   const list = loadVerifs();
   const r = list.find((x) => x.id === id);
   if (!r) return;
@@ -386,13 +481,22 @@ function renderCtrl() {
         <button class="btn danger" id="c-reset">Сбросить состояние приложения</button>
       </div>
     </div>`;
-  $('#c-approve-all').onclick = () => {
+  $('#c-approve-all').onclick = async () => {
+    if (REAL) {
+      const pend = verifList().filter((r) => r.status === 'pending');
+      try { for (const r of pend) await Backend.decide(r.id, 'approved', '', ADMIN_USER && ADMIN_USER.id); toast(`Одобрено: ${pend.length}`); renderApp(); }
+      catch (e) { toast('Ошибка: ' + (e.message || e)); }
+      return;
+    }
     const list = loadVerifs(); let n = 0;
     const st = loadState();
     list.forEach((r) => { if (r.status === 'pending') { r.status = 'approved'; r.reviewedAt = Date.now(); r.comment = r.comment || ''; n++; if (st && st.profile && st.profile.id === r.userId) { st.profile.verifyStatus = 'approved'; st.profile.verified = true; } } });
     saveVerifs(list); if (st) saveState(st); toast(`Одобрено: ${n}`); renderApp();
   };
-  $('#c-clear-verif').onclick = () => { if (confirm('Очистить всю очередь верификаций?')) { saveVerifs([]); toast('Очередь очищена'); renderApp(); } };
+  $('#c-clear-verif').onclick = () => {
+    if (REAL) { toast('В реальном режиме очередь не очищается вручную'); return; }
+    if (confirm('Очистить всю очередь верификаций?')) { saveVerifs([]); toast('Очередь очищена'); renderApp(); }
+  };
   $('#c-seed').onclick = () => {
     const st = loadState(); if (!st || !st.people) { toast('Нет состояния приложения'); return; }
     const women = (typeof DEMO_PEOPLE !== 'undefined' ? DEMO_PEOPLE : []).filter((p) => p.gender === 'w');
@@ -409,7 +513,26 @@ function renderCtrl() {
 }
 
 /* ---------------- boot ---------------- */
-// keep the panel fresh if the app (another tab) changes data
-addEventListener('storage', (e) => { if ((e.key === VKEY || e.key === LS_KEY) && isAuthed()) renderApp(); });
-// The unwrap key lives only in memory, so every load starts at the login gate.
-renderLogin();
+// demo mode: keep the panel fresh if the app (another tab) changes local data
+addEventListener('storage', (e) => { if (!REAL && (e.key === VKEY || e.key === LS_KEY) && isAuthed()) renderApp(); });
+
+let routing = false;
+async function route() {
+  if (routing) return; routing = true;
+  try {
+    const u = await Backend.user();
+    if (!u) { renderLogin(); return; }
+    if (await Backend.isAdmin()) { ADMIN_USER = u; await renderApp(); }
+    else { renderNotAdmin(u); }
+  } catch (e) {
+    $('#app').innerHTML = `<div class="login"><div class="login-card"><div class="brand">DATE&nbsp;ME <span>ADMIN</span></div><div class="warn">Не удалось связаться с сервером: ${esc(e.message || e)}</div></div></div>`;
+  } finally { routing = false; }
+}
+
+if (REAL) {
+  Backend.onAuth(() => route()); // fires on load + after magic-link/OAuth redirect
+  route();
+} else {
+  // Supabase not configured — fall back to the demo (in-memory key) login.
+  renderLoginDemo();
+}

@@ -95,108 +95,18 @@ const TRAVEL_MODES = [
 ];
 
 /* ---------------- verification gestures ----------------
-   Anti-catfishing: a random gesture is shown as a drawn example (no real
-   person's photo) and the user must replicate it in a selfie. `ups` = which
-   of the 4 fingers are raised; `thumb`: 'out' | 'in' | 'up'. */
+   Anti-catfishing: a random gesture is shown as an example (a native system
+   emoji — no real person's photo) and the user must replicate it in a selfie.
+   Rendered as real emoji text so it looks native (Apple emoji on iOS, etc.). */
 const VERIFY_GESTURES = [
-  { id: 'palm',  ups: [1, 1, 1, 1], thumb: 'out' },
-  { id: 'peace', ups: [1, 1, 0, 0], thumb: 'in' },
-  { id: 'three', ups: [1, 1, 1, 0], thumb: 'in' },
-  { id: 'thumb', ups: [0, 0, 0, 0], thumb: 'up' },
+  { id: 'palm',  emoji: '🖐️' },
+  { id: 'peace', emoji: '✌️' },
+  { id: 'ok',    emoji: '👌' },
+  { id: 'thumb', emoji: '👍' },
 ];
 
-/* ---- hand illustration ----------------------------------------------
-   Minimal single-colour glyph in the app's own line-icon language: one soft
-   lavender hand on the neon card, thin unified outline, tapered fingers.
-   Palm faces the camera; thumbs-up is drawn as a proper fist. */
-const _LINE = 'rgba(76,44,120,0.9)'; // unified outline (violet-ink)
-const _LW = 3;
-// finger geometry: centre-x, base half-width, tip half-width, fingertip-y up
-const _FINGERS = [
-  { cx: 116, wb: 15, wt: 12, tip: 112 }, // index
-  { cx: 147, wb: 16, wt: 12, tip: 92 },  // middle (longest)
-  { cx: 178, wb: 15, wt: 12, tip: 106 }, // ring
-  { cx: 206, wb: 13, wt: 10, tip: 140 }, // pinky
-];
-const _KNUCK = 210; // knuckle line where fingers meet the palm
-
-/** a tapered, round-tipped finger from the knuckle line up to `tip` */
-function _fingerUp(f) {
-  const { cx, wb, wt, tip } = f;
-  return `<path d="M${cx - wb} ${_KNUCK} `
-    + `L${cx - wt} ${tip + wt} Q${cx - wt} ${tip} ${cx} ${tip} `
-    + `Q${cx + wt} ${tip} ${cx + wt} ${tip + wt} `
-    + `L${cx + wb} ${_KNUCK} Z" fill="url(#skin)" stroke="${_LINE}" stroke-width="${_LW}" stroke-linejoin="round"/>`;
-}
-/** a folded finger: a low rounded knuckle sitting on the palm top */
-function _fingerFold(f) {
-  const { cx, wb } = f;
-  return `<path d="M${cx - wb} ${_KNUCK} L${cx - wb} 196 Q${cx - wb} 182 ${cx} 182 `
-    + `Q${cx + wb} 182 ${cx + wb} 196 L${cx + wb} ${_KNUCK} Z" fill="url(#skinF)" stroke="${_LINE}" stroke-width="${_LW}" stroke-linejoin="round"/>`;
-}
-
-/** full hand for a gesture (palm-to-camera, or a fist for thumbs-up) */
-function handArt(g) {
-  // thumbs-up: a fist (rounded block + curled-finger ridges) with thumb up
-  if (g.thumb === 'up') {
-    return `
-      <path d="M150 210 q0 -92 30 -92 q26 0 26 44 l0 48 Z"
-            fill="url(#skin)" stroke="${_LINE}" stroke-width="${_LW}" stroke-linejoin="round"/>
-      <rect x="102" y="196" width="128" height="132" rx="40" fill="url(#skin)" stroke="${_LINE}" stroke-width="${_LW}"/>
-      ${[133, 165, 197].map((x) => `<line x1="${x}" y1="202" x2="${x}" y2="250" stroke="${_LINE}" stroke-width="2.4" stroke-linecap="round" opacity="0.55"/>`).join('')}
-      <path d="M110 250 q56 20 112 0" fill="none" stroke="${_LINE}" stroke-width="2.6" stroke-linecap="round" opacity="0.55"/>
-      <path d="M150 210 q4 -14 22 -15" fill="none" stroke="${_LINE}" stroke-width="2.4" stroke-linecap="round" opacity="0.5"/>`;
-  }
-  let s = '';
-  // cuff + wrist behind the palm
-  s += `<path d="M116 300 h68 a24 24 0 0 1 24 24 v52 h-116 v-52 a24 24 0 0 1 24 -24 Z" fill="url(#cuff)"/>`;
-  s += `<rect x="120" y="292" width="90" height="34" rx="17" fill="url(#skin)" stroke="${_LINE}" stroke-width="${_LW}"/>`;
-  // fingers first, then the palm overlaps their base so it reads as one shape
-  s += g.ups.map((up, i) => (up ? _fingerUp(_FINGERS[i]) : _fingerFold(_FINGERS[i]))).join('');
-  // thumb
-  if (g.thumb === 'out') {
-    s += `<path d="M104 240 Q74 222 56 232 Q44 239 49 252 Q56 267 81 266 L106 270 Z"
-             fill="url(#skin)" stroke="${_LINE}" stroke-width="${_LW}" stroke-linejoin="round"/>`;
-  } else { // tucked across the lower palm
-    s += `<path d="M104 262 Q150 246 196 268 Q198 286 180 288 Q150 278 116 284 Q100 284 104 262 Z"
-             fill="url(#skinF)" stroke="${_LINE}" stroke-width="${_LW}" stroke-linejoin="round"/>`;
-  }
-  // palm (drawn over the finger roots)
-  s += `<path d="M100 214 Q100 196 120 196 H210 Q230 196 230 218 V292 Q230 318 200 318 H130 Q100 318 100 292 Z"
-           fill="url(#skin)" stroke="${_LINE}" stroke-width="${_LW}" stroke-linejoin="round"/>`;
-  // re-draw the raised fingers' lower edge so the palm seam disappears
-  s += g.ups.map((up, i) => (up ? `<line x1="${_FINGERS[i].cx - _FINGERS[i].wb}" y1="${_KNUCK}" x2="${_FINGERS[i].cx + _FINGERS[i].wb}" y2="${_KNUCK}" stroke="url(#skin)" stroke-width="${_LW + 1}"/>` : '')).join('');
-  return s;
-}
-
-/** drawn selfie example for a gesture (SVG data-URI) */
-function gestureSVG(id) {
+/** the example gesture as a native emoji glyph */
+function gestureEmoji(id) {
   const g = VERIFY_GESTURES.find((x) => x.id === id) || VERIFY_GESTURES[0];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 380">
-<defs>
-<linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
-<stop offset="0" stop-color="#1a1330"/><stop offset="1" stop-color="#100c1a"/>
-</linearGradient>
-<radialGradient id="glow" cx="0.5" cy="0.44" r="0.62">
-<stop offset="0" stop-color="rgba(168,85,247,0.42)"/><stop offset="1" stop-color="rgba(168,85,247,0)"/>
-</radialGradient>
-<linearGradient id="skin" x1="0" y1="0" x2="0.4" y2="1">
-<stop offset="0" stop-color="#f6f1ff"/><stop offset="1" stop-color="#e4d7fb"/>
-</linearGradient>
-<linearGradient id="skinF" x1="0" y1="0" x2="0.4" y2="1">
-<stop offset="0" stop-color="#e6dbfa"/><stop offset="1" stop-color="#d3c2f2"/>
-</linearGradient>
-<linearGradient id="cuff" x1="0" y1="0" x2="1" y2="1">
-<stop offset="0" stop-color="#a855f7"/><stop offset="1" stop-color="#7c3aed"/>
-</linearGradient>
-</defs>
-<rect x="6" y="6" width="288" height="368" rx="34" fill="url(#card)"/>
-<circle cx="150" cy="190" r="134" fill="url(#glow)"/>
-<circle cx="52" cy="52" r="2.4" fill="rgba(255,255,255,0.7)"/>
-<circle cx="248" cy="84" r="1.8" fill="hsla(268,90%,82%,0.85)"/>
-<circle cx="60" cy="330" r="1.6" fill="rgba(255,255,255,0.5)"/>
-${handArt(g)}
-<rect x="6" y="6" width="288" height="368" rx="34" fill="none" stroke="#a855f7" stroke-width="4"/>
-</svg>`;
-  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+  return g.emoji;
 }
