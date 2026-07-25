@@ -40,6 +40,27 @@
       return !!data;
     },
 
+    /* ---- profiles ---- */
+    async upsertProfile(profile) {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) throw new Error('not signed in');
+      const { error } = await client.from('profiles').upsert({ id: user.id, ...profile });
+      if (error) throw error;
+    },
+    async getProfile(userId) {
+      const { data, error } = await client.from('profiles').select('*').eq('id', userId).maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    async updateProfileAsAdmin(userId, patch) { // admin edits an applicant's profile
+      const { error } = await client.from('profiles').upsert({ id: userId, ...patch });
+      if (error) throw error;
+    },
+    async updateVerificationMeta(id, patch) {
+      const { error } = await client.from('verifications').update(patch).eq('id', id);
+      if (error) throw error;
+    },
+
     /* ---- verifications ---- */
     async submitVerification({ userId, name, age, gestureId, blob }) {
       const path = `${userId}/${(crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2))}.jpg`;

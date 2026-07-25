@@ -101,7 +101,6 @@ function renderLogin() {
         <div class="brand">DATE&nbsp;ME <span>ADMIN</span></div>
         <p class="muted">Вход для администраторов</p>
         <button type="button" class="btn block" id="g-google">Войти через Google</button>
-        <button type="button" class="btn block" id="g-apple">Войти через Apple</button>
         <div class="or">или по e-mail</div>
         <input id="em" type="email" placeholder="E-mail" autocomplete="email" autocapitalize="off" spellcheck="false" autofocus>
         <div class="err" id="le"></div>
@@ -111,7 +110,6 @@ function renderLogin() {
     </div>`;
   const fail = (e) => { $('#le').textContent = (e && (e.message || e)) || 'Ошибка входа'; };
   $('#g-google').onclick = () => Backend.signInOAuth('google').catch(fail);
-  $('#g-apple').onclick = () => Backend.signInOAuth('apple').catch(fail);
   $('#lf').onsubmit = async (e) => {
     e.preventDefault();
     const email = $('#em').value.trim(); if (!email) return;
@@ -287,7 +285,10 @@ function renderVerif() {
       const extra = isAppUser ? myPhotos : [];
       return `
       <div class="vcard ${r.status}">
-        <div class="vhead"><b>${esc(r.name)}, ${r.age}</b><span class="tag ${r.status}">${stName(r.status)}</span></div>
+        <div class="vhead">
+          <b>${esc(r.name)}, ${r.age}</b>
+          <span style="display:flex;align-items:center;gap:8px">${REAL ? `<button class="btn sm" data-prof="${r.id}">Профиль</button>` : ''}<span class="tag ${r.status}">${stName(r.status)}</span></span>
+        </div>
         <div class="vshots">
           <figure><div class="gex">${gestureEmoji(r.gestureId)}</div><figcaption>Пример: ${gname(r.gestureId)}</figcaption></figure>
           <figure><img id="selfie-${r.id}" alt="" data-selfie="${r.id}"><figcaption>Селфи</figcaption></figure>
@@ -312,8 +313,46 @@ function renderVerif() {
       decide(b.dataset.id, b.dataset.act);
     };
   });
-  // Decrypt each selfie in place (only possible with the unwrapped admin key).
+  $$('[data-prof]').forEach((b) => { b.onclick = () => openProfileEdit(list.find((x) => x.id === b.dataset.prof)); });
+  // Load each selfie in place.
   list.forEach((r) => paintSelfie(r));
+}
+
+/* Open an editor for the applicant's profile (real mode). Saves to the
+   profiles table and mirrors name/age onto the verification row. */
+async function openProfileEdit(r) {
+  if (!r) return;
+  let prof = null;
+  try { prof = await Backend.getProfile(r.userId); } catch { /* may not exist yet */ }
+  const name = (prof && prof.name) || r.name || '';
+  const age = (prof && prof.age) || r.age || '';
+  const gender = (prof && prof.gender) || '';
+  const m = $('#modal');
+  m.classList.remove('hidden');
+  m.onclick = null; // don't close on backdrop while editing
+  m.innerHTML = `
+    <div class="editcard">
+      <h3>Профиль заявителя</h3>
+      <div class="muted" style="font-size:11.5px;margin:-4px 0 4px;word-break:break-all">${esc(r.userId)}</div>
+      <label>Имя<input id="ep-name" value="${esc(name)}"></label>
+      <label>Возраст<input id="ep-age" type="number" min="18" max="99" value="${esc(age)}"></label>
+      <label>Пол<select id="ep-gender"><option value="">—</option><option value="w">Женский</option><option value="m">Мужской</option></select></label>
+      <div class="editacts">
+        <button class="btn" id="ep-cancel">Отмена</button>
+        <button class="btn ok" id="ep-save">Сохранить</button>
+      </div>
+    </div>`;
+  $('#ep-gender').value = gender;
+  $('#ep-cancel').onclick = () => m.classList.add('hidden');
+  $('#ep-save').onclick = async () => {
+    const patch = { name: $('#ep-name').value.trim(), age: +$('#ep-age').value || null, gender: $('#ep-gender').value || null };
+    const btn = $('#ep-save'); btn.disabled = true;
+    try {
+      await Backend.updateProfileAsAdmin(r.userId, patch);
+      await Backend.updateVerificationMeta(r.id, { name: patch.name, age: patch.age });
+      m.classList.add('hidden'); toast('Профиль обновлён'); renderApp();
+    } catch (e) { btn.disabled = false; toast('Ошибка: ' + (e.message || e)); }
+  };
 }
 
 /** Load a request's selfie into its <img>. Real mode downloads from the

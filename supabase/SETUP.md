@@ -27,9 +27,7 @@ Dashboard → **Authentication → Providers**:
   Google Cloud Console (Credentials → OAuth client → Web). Put Supabase's
   callback URL (shown on the provider page,
   `…/auth/v1/callback`) into Google's "Authorized redirect URIs".
-- **Apple** — enable, then add your Apple **Services ID + key** (needs a paid
-  Apple Developer account). Same callback URL goes into Apple's config.
-- **Phone (SMS)** — later.
+- **Apple / Phone (SMS)** — later (not wired in the UI yet).
 
 ## 4. Make yourself an admin
 1. Open the site (or `/adminka6582/`) and **sign in once** with your email so
