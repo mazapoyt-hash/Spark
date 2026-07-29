@@ -177,6 +177,40 @@
       return data || [];
     },
 
+    /* ---- video messages (one each way per match) ---- */
+    async sendVideo(receiverId, blob) {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) throw new Error('not signed in');
+      const path = `${user.id}/${receiverId}.mp4`;
+      const up = await client.storage.from('messages').upload(path, blob, { contentType: blob.type || 'video/mp4', upsert: true });
+      if (up.error) throw up.error;
+      const { error } = await client.from('messages').upsert({ sender_id: user.id, receiver_id: receiverId, video_path: path, created_at: new Date().toISOString() }, { onConflict: 'sender_id,receiver_id' });
+      if (error) throw error;
+    },
+    async myVideoTo(receiverId) {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return null;
+      const { data } = await client.from('messages').select('*').eq('sender_id', user.id).eq('receiver_id', receiverId).maybeSingle();
+      return data || null;
+    },
+    async videoFrom(senderId) {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return null;
+      const { data } = await client.from('messages').select('*').eq('sender_id', senderId).eq('receiver_id', user.id).maybeSingle();
+      return data || null;
+    },
+    async videoUrl(path) {
+      const { data, error } = await client.storage.from('messages').download(path);
+      if (error) throw error;
+      return URL.createObjectURL(data);
+    },
+    async deleteVideo(receiverId) {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return;
+      try { await client.storage.from('messages').remove([`${user.id}/${receiverId}.mp4`]); } catch { /* ignore */ }
+      await client.from('messages').delete().eq('sender_id', user.id).eq('receiver_id', receiverId);
+    },
+
     /* ---- account deletion ---- */
     async deleteAccount() {
       const { data: { user } } = await client.auth.getUser();

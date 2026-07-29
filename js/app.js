@@ -81,6 +81,7 @@ const ICONS = {
   info: ['o', '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.4"/><circle cx="12" cy="7.9" r="1" fill="currentColor" stroke="none"/>'],
   shuffle: ['o', '<path d="M17 4l3 3-3 3M17 14l3 3-3 3M4 7h4.5c3.5 0 5 10 8.5 10H20M4 17h4.5c1.6 0 2.8-2 3.7-4.2"/>'],
   plus: ['o', '<path d="M12 5v14M5 12h14"/>'],
+  video: ['o', '<rect x="3.5" y="6.5" width="12" height="11" rx="2.5"/><path d="M15.5 10l5-2.6v9.2l-5-2.6z"/>'],
 };
 function svgIcon(name, cls = '') {
   const ic = ICONS[name];
@@ -862,6 +863,68 @@ function renderLikes() {
   });
 }
 
+/* ---------------- video message (one each way) ----------------
+   Uses the native camera (capture) so it works reliably on iOS. Stored in the
+   private `messages` bucket; readable only by the two participants. */
+function openVideo(pid) {
+  const p = person(pid);
+  const s = $('#sheet-video');
+  const file = $('#vm-file');
+  const backend = !!(window.Backend && Backend.enabled);
+  let picked = null, pickedUrl = null;
+  const revoke = () => { if (pickedUrl) { URL.revokeObjectURL(pickedUrl); pickedUrl = null; } };
+  const closeSheet = () => { revoke(); file.onchange = null; s.classList.add('hidden'); };
+
+  const draw = async () => {
+    let mine = null, theirs = null, theirUrl = null, myUrl = null;
+    if (backend) {
+      try { mine = await Backend.myVideoTo(pid); } catch { /* ignore */ }
+      try { theirs = await Backend.videoFrom(pid); } catch { /* ignore */ }
+      if (theirs) { try { theirUrl = await Backend.videoUrl(theirs.video_path); } catch { /* ignore */ } }
+      if (mine && !picked) { try { myUrl = await Backend.videoUrl(mine.video_path); } catch { /* ignore */ } }
+    }
+    s.innerHTML = `
+      <div class="sheet-card">
+        <div class="grab"></div>
+        <div class="wz-head"><img src="${avatar(p)}" alt=""><div><div class="wname">${esc(p.name)}, ${p.age}</div><div class="wstep">${esc(t('vm_title'))}</div></div><button class="icon-btn wz-x" id="vm-close">${svgIcon('x')}</button></div>
+        <p class="section-sub" style="margin-bottom:14px">${esc(t('vm_sub'))}</p>
+        <div class="vm-block"><div class="vm-cap">${esc(t('vm_from', { name: p.name }))}</div>
+          ${theirUrl ? `<video class="vm-video" src="${theirUrl}" controls playsinline></video>` : `<div class="vm-empty">${esc(t('vm_none'))}</div>`}</div>
+        <div class="vm-block"><div class="vm-cap">${esc(t('vm_yours'))}</div>
+          ${!backend ? `<p class="ve-note">${svgIcon('info')} ${esc(t('vm_need'))}</p>`
+            : picked ? `<video class="vm-video" src="${pickedUrl}" controls playsinline></video>
+              <div class="vm-acts"><button class="btn btn-ghost btn-sm" id="vm-retake">${svgIcon('shuffle')} ${esc(t('vm_retake'))}</button><button class="btn btn-primary btn-sm" id="vm-send">${svgIcon('check')} ${esc(t('vm_send'))}</button></div>`
+            : myUrl ? `<video class="vm-video" src="${myUrl}" controls playsinline></video>
+              <div class="vm-acts"><button class="btn btn-ghost btn-sm" id="vm-del">${svgIcon('x')} ${esc(t('vm_delete'))}</button></div>
+              <p class="ve-note">${svgIcon('info')} ${esc(t('vm_one'))}</p>`
+            : `<button class="btn btn-primary" id="vm-rec">${svgIcon('video')} ${esc(t('vm_record'))}</button>`}
+        </div>
+      </div>`;
+    $('#vm-close').onclick = closeSheet;
+    s.onclick = (e) => { if (e.target === s) closeSheet(); };
+    const rec = $('#vm-rec'); if (rec) rec.onclick = () => file.click();
+    const rt = $('#vm-retake'); if (rt) rt.onclick = () => file.click();
+    const snd = $('#vm-send'); if (snd) snd.onclick = async () => {
+      snd.disabled = true;
+      try { await Backend.sendVideo(pid, picked); picked = null; revoke(); toast(t('vm_sent', { name: p.name })); draw(); }
+      catch (e) { snd.disabled = false; toast((e && (e.message || e)) || 'Ошибка'); }
+    };
+    const del = $('#vm-del'); if (del) del.onclick = async () => {
+      if (!confirm(t('vm_del_confirm'))) return;
+      try { await Backend.deleteVideo(pid); toast(t('vm_deleted')); draw(); }
+      catch (e) { toast((e && (e.message || e)) || 'Ошибка'); }
+    };
+  };
+  file.onchange = (e) => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    picked = f; revoke(); pickedUrl = URL.createObjectURL(f);
+    draw();
+  };
+  s.classList.remove('hidden');
+  draw();
+}
+
 /* ---------------- match ---------------- */
 function onMutualLike(id, instant = false) {
   APP_STATE.unseen.meet++;
@@ -884,6 +947,7 @@ function showMatchModal(id) {
       <p class="mm-sub">${esc(t('m_sub', { name: p.name }))}</p>
       <div class="mm-btns">
         <button class="btn btn-primary" id="mm-go">${esc(t('m_schedule'))}</button>
+        <button class="btn btn-ghost" id="mm-video">${svgIcon('video')} ${esc(t('vm_open'))}</button>
         <button class="btn btn-ghost" id="mm-msg">${svgIcon('envelope')} ${esc(t('note_open'))}</button>
         <button class="btn btn-ghost" id="mm-later">${esc(t('m_later'))}</button>
       </div>
@@ -891,6 +955,7 @@ function showMatchModal(id) {
   w.classList.remove('hidden');
   heartBurst(innerWidth / 2, innerHeight / 3, 16);
   $('#mm-go').onclick = () => { w.classList.add('hidden'); openWizard(id); };
+  $('#mm-video').onclick = () => { w.classList.add('hidden'); openVideo(id); };
   $('#mm-msg').onclick = () => { w.classList.add('hidden'); openNote(id); };
   $('#mm-later').onclick = () => { w.classList.add('hidden'); renderCurrentView(); };
 }
@@ -917,6 +982,7 @@ function renderMeet() {
         <div class="msub">${off ? esc(t('meet_offline')) : `<i class="dot"></i> ${esc(t('d_online'))}${p.km != null ? ' · ' + esc(t('d_km', { km: p.km })) : ''}`}</div>
       </div>
       ${off ? '' : `<div class="macts">
+        <button class="mbtn vid" aria-label="${esc(t('vm_open'))}">${svgIcon('video')}</button>
         <button class="mbtn msg ${sent ? 'sent' : ''}" aria-label="${esc(t('note_open'))}">${svgIcon('envelope')}${unread ? '<i class="ndot"></i>' : ''}</button>
         <button class="go">${esc(t('meet_cta'))}</button>
       </div>`}
@@ -927,6 +993,7 @@ function renderMeet() {
     $('.mimg', row).onclick = () => openProfileSheet(id);
     const go = $('.go', row); if (go) go.onclick = () => openWizard(id);
     const msg = $('.msg', row); if (msg) msg.onclick = () => openNote(id);
+    const vid = $('.vid', row); if (vid) vid.onclick = () => openVideo(id);
   });
 }
 

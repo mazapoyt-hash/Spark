@@ -947,6 +947,14 @@ input[type="date"].input, input[type="time"].input { color-scheme: dark; }
 .roul-cells { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; max-width: 320px; }
 .rcell { padding: 22px 12px; border-radius: 16px; background: var(--card); border: 2px solid var(--stroke-2); text-align: center; font-weight: 800; font-size: 16px; color: var(--muted); transition: all 0.1s; }
 .rcell.on { background: var(--grad); border-color: transparent; color: #fff; box-shadow: var(--glow); transform: scale(1.04); }
+
+/* ---------- video message ---------- */
+.vm-block { margin-bottom: 16px; }
+.vm-cap { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
+.vm-video { width: 100%; max-height: 46vh; border-radius: 16px; background: #000; border: 1px solid var(--stroke-2); }
+.vm-empty { padding: 22px; border-radius: 14px; border: 1.5px dashed var(--stroke-2); background: var(--card); color: var(--faint); text-align: center; font-size: 13px; }
+.vm-acts { display: flex; gap: 10px; margin-top: 10px; }
+.vm-acts .btn { flex: 1; }
 .fpill.spin svg { animation: spin360 0.6s linear; }
 
 /* done state */
