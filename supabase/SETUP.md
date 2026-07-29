@@ -30,6 +30,11 @@ geocoded via keyless OSM Nominatim, languages, photo) that appear in discovery
 as verified people. Behavior `autolike` makes a bot like everyone nearby (so a
 real user gets an instant match on like-back). Toggle active / delete anytime.
 
+**Video messages**: matched users can send **one video each way** (recorded
+with the native camera). Videos live in a private `messages` bucket readable
+only by the two participants; deleting yours lets you record a new one. Needs
+the `messages` table + bucket from `schema.sql`.
+
 **Delete account**: the profile screen's button removes all of a user's data
 (profile, verifications, likes, dates, storage) and their auth user via the
 `delete_account()` function — make sure `schema.sql` has been re-run so that

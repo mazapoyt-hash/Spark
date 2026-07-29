@@ -55,7 +55,7 @@ function loadState() {
 let APP_STATE = loadState();
 window.APP_STATE = APP_STATE;
 
-const save = () => localStorage.setItem(LS_KEY, JSON.stringify(APP_STATE));
+const save = () => { try { localStorage.setItem(LS_KEY, JSON.stringify(APP_STATE)); } catch { /* quota / private mode */ } };
 
 /* ---------------- utils ---------------- */
 const $ = (s, r) => (r || document).querySelector(s);
@@ -81,6 +81,7 @@ const ICONS = {
   info: ['o', '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.4"/><circle cx="12" cy="7.9" r="1" fill="currentColor" stroke="none"/>'],
   shuffle: ['o', '<path d="M17 4l3 3-3 3M17 14l3 3-3 3M4 7h4.5c3.5 0 5 10 8.5 10H20M4 17h4.5c1.6 0 2.8-2 3.7-4.2"/>'],
   plus: ['o', '<path d="M12 5v14M5 12h14"/>'],
+  video: ['o', '<rect x="3.5" y="6.5" width="12" height="11" rx="2.5"/><path d="M15.5 10l5-2.6v9.2l-5-2.6z"/>'],
 };
 function svgIcon(name, cls = '') {
   const ic = ICONS[name];
@@ -104,7 +105,7 @@ const distLabel = (p) => (kmStr(p) ? `${t('d_km', { km: kmStr(p) })} ${t('map_fr
 const myPhotos = () => (APP_STATE.profile.photos || []);
 const myAvatar = () => myPhotos()[0] || avatarDataURI(APP_STATE.profile.name || 'You', 330, 275);
 /** photos to show for a person (demo people have one generated portrait) */
-const personPhotos = (p) => [avatar(p)];
+const personPhotos = (p) => (p._photos && p._photos.length ? p._photos : [avatar(p)]);
 
 function fmtDate(iso) {
   const loc = APP_STATE.profile.locale;
@@ -162,8 +163,16 @@ let realLoading = null;
 
 const hashHue = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; };
 const mapRealUser = (u) => ({ id: u.id, name: u.name || '—', age: u.age || '', gender: u.gender || '', langs: u.langs || [], km: (u.km == null ? null : u.km), lat: u.lat, lng: u.lng, hues: [hashHue(u.id), (hashHue(u.id) + 40) % 360], _photos: u.photos || [], _real: true, _bot: !!u.is_bot, _behavior: u.behavior || 'passive' });
-const rst = (id) => ({ online: true, likedMe: realLikedMe.has(id), iLiked: realLikes.has(id), declined: realPasses.has(id), dateId: null, note: null });
-const person = (id) => (REAL_DISCOVERY ? REAL_BY_ID[id] : DEMO_BY_ID[id]) || { name: '?', age: '', hues: [270, 300] };
+const rst = (id) => { const ps = (APP_STATE.realState && APP_STATE.realState[id]) || {}; return { online: true, likedMe: realLikedMe.has(id), iLiked: realLikes.has(id), declined: realPasses.has(id), dateId: ps.dateId || null, note: ps.note || null }; };
+/* mutable per-person state (note / dateId). Demo uses APP_STATE.people; real
+   users & bots use APP_STATE.realState (they aren't in the demo people map). */
+function pstate(id) {
+  if (REAL_DISCOVERY) { APP_STATE.realState = APP_STATE.realState || {}; return (APP_STATE.realState[id] = APP_STATE.realState[id] || { note: null, dateId: null }); }
+  return dyn(id) || {};
+}
+/* read-only display state (online/note/dateId/like flags), demo or real */
+const dstate = (id) => (REAL_DISCOVERY ? rst(id) : dyn(id));
+const person = (id) => (REAL_DISCOVERY ? REAL_BY_ID[id] : DEMO_BY_ID[id]) || { name: '?', age: '', hues: [270, 300], langs: [] };
 
 async function loadRealDiscovery() {
   if (!(window.Backend && Backend.enabled)) { REAL_DISCOVERY = false; return false; }
@@ -171,10 +180,10 @@ async function loadRealDiscovery() {
   if (!u) { REAL_DISCOVERY = false; return false; }
   try {
     if (USER_GEO) { try { await Backend.updateMyGeo(USER_GEO.lat, USER_GEO.lng); } catch { /* non-fatal */ } }
-    const [nearby, mine, ofme] = await Promise.all([
-      Backend.nearbyUsers(USER_GEO, APP_STATE.profile.radiusKm || 10),
-      Backend.myLikes(), Backend.likesOfMe(),
-    ]);
+    const nearby = await Backend.nearbyUsers(USER_GEO, APP_STATE.profile.radiusKm || 10);
+    // likes are optional — a hiccup there shouldn't drop the whole feed to demo
+    let mine = [], ofme = [];
+    try { [mine, ofme] = await Promise.all([Backend.myLikes(), Backend.likesOfMe()]); } catch { /* keep empty */ }
     REAL_PEOPLE = nearby.map(mapRealUser);
     REAL_BY_ID = Object.fromEntries(REAL_PEOPLE.map((p) => [p.id, p]));
     realLikes = new Set(mine); realLikedMe = new Set(ofme);
@@ -190,7 +199,8 @@ async function loadRealDiscovery() {
 function ensureRealDiscovery(force) {
   if (!(window.Backend && Backend.enabled)) return Promise.resolve(false);
   if (!force && realLoading) return realLoading;
-  realLoading = loadRealDiscovery();
+  // don't cache a failed load — let the next tab switch / refresh retry
+  realLoading = loadRealDiscovery().then((ok) => { if (!ok) realLoading = null; return ok; });
   return realLoading;
 }
 
@@ -205,7 +215,7 @@ const likesList = () => (REAL_DISCOVERY
 ).sort((a, b) => (a.km == null ? 1e9 : a.km) - (b.km == null ? 1e9 : b.km));
 
 const matchList = () => (REAL_DISCOVERY
-  ? REAL_PEOPLE.filter((p) => { const d = rst(p.id); return d.likedMe && d.iLiked && !d.declined; })
+  ? REAL_PEOPLE.filter((p) => { const d = rst(p.id); return d.likedMe && d.iLiked && !d.declined && !d.dateId; })
   : DEMO_PEOPLE.filter((p) => { const d = dyn(p.id); return d.likedMe && d.iLiked && !d.declined && !d.dateId; }));
 
 const onlineNearby = () => (REAL_DISCOVERY
@@ -298,10 +308,17 @@ function renderDiscover() {
   $('#fpills').innerHTML = `
     <button class="fpill ${discoverFilter === 'all' ? 'on' : ''}" data-f="all">${svgIcon('sparkle')} ${esc(t('f_all'))}</button>
     <button class="fpill ${discoverFilter === 'near' ? 'on' : ''}" data-f="near">${esc(t('f_near'))}</button>
-    <span class="fpill static"><i class="dot"></i>${onlineNearby()} ${esc(t('d_online'))}</span>`;
+    <span class="fpill static"><i class="dot"></i>${onlineNearby()} ${esc(t('d_online'))}</span>
+    ${(window.Backend && Backend.enabled) ? `<button class="fpill" id="fpill-refresh">${svgIcon('shuffle')} ${esc(t('d_refresh'))}</button>` : ''}`;
   $$('#fpills .fpill[data-f]').forEach((b) => {
     b.onclick = () => { discoverFilter = b.dataset.f; centralId = null; renderDiscover(); };
   });
+  const rfr = $('#fpill-refresh');
+  if (rfr) rfr.onclick = () => {
+    rfr.classList.add('spin');
+    ensureGeo(() => {});
+    ensureRealDiscovery(true).then(() => { centralId = null; if (currentTab === 'discover') renderCurrentView(); });
+  };
 
   const deck = $('#deck');
   const list = orbitList();
@@ -464,7 +481,7 @@ function openGallery(images, start = 0) {
 /* ---------------- profile / info sheet ---------------- */
 function openProfileSheet(pid) {
   const p = person(pid);
-  const d = dyn(pid);
+  const d = dstate(pid);
   const photos = personPhotos(p);
   const s = $('#sheet-profile');
   s.innerHTML = `
@@ -519,6 +536,15 @@ const myLoc = () => USER_GEO || MY_LOCATION;
 /** demo places are anchored around Berlin; when we know the real location
  *  we shift them by the same vector so distances stay realistic AND the
  *  route opened in Maps matches the in-app estimate. */
+/* fetch with an abort timeout — keyless public APIs can stall, and an un-timed
+   fetch would hang the wizard / bot creation indefinitely. */
+async function fetchT(url, ms = 12000, opts) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try { return await fetch(url, { ...(opts || {}), signal: ctrl.signal }); }
+  finally { clearTimeout(timer); }
+}
+
 function placeGeo(name) {
   if (REAL_PLACE_GEO[name]) return REAL_PLACE_GEO[name]; // real OSM coordinates
   const g = PLACE_GEO[name];
@@ -545,7 +571,7 @@ async function fetchPlaces(center) {
     + `node["leisure"~"^(park|garden)$"](around:2500,${center.lat},${center.lng});`
     + `node["tourism"~"^(viewpoint|museum|gallery)$"](around:2500,${center.lat},${center.lng});`
     + `);out 80;`;
-  const r = await fetch(PLACES_URL + '?data=' + encodeURIComponent(q));
+  const r = await fetchT(PLACES_URL + '?data=' + encodeURIComponent(q), 15000);
   if (!r.ok) throw new Error('overpass ' + r.status);
   const els = (await r.json()).elements || [];
   const seen = new Set(); const inside = []; const outside = [];
@@ -659,7 +685,7 @@ async function fetchRoutes(name, me, geo) {
         costing, units: 'kilometers', directions_type: 'none',
       };
       // GET with ?json= avoids a CORS preflight (simple request)
-      const r = await fetch(ROUTER_URL + '?json=' + encodeURIComponent(JSON.stringify(body)));
+      const r = await fetchT(ROUTER_URL + '?json=' + encodeURIComponent(JSON.stringify(body)), 12000);
       if (!r.ok) return;
       const sum = (await r.json())?.trip?.summary;
       if (sum && sum.time != null) {
@@ -761,7 +787,7 @@ function notePresets() {
 }
 function openNote(pid) {
   const p = person(pid);
-  const d = dyn(pid);
+  const d = pstate(pid);
   const s = $('#sheet-note');
   const draw = () => {
     const n = d.note;
@@ -797,8 +823,8 @@ function openNote(pid) {
       toast(t('note_sent', { name: p.name }), avatar(p));
       if (currentTab === 'meet') renderMeet();
       if (firstTime) setTimeout(() => {
-        if (dyn(pid).note && !dyn(pid).note.theirs) {
-          dyn(pid).note.theirs = t('note_reply');
+        if (pstate(pid).note && !pstate(pid).note.theirs) {
+          pstate(pid).note.theirs = t('note_reply');
           save();
           if (!$('#sheet-note').classList.contains('hidden')) draw();
           if (currentTab === 'meet') renderMeet();
@@ -847,6 +873,74 @@ function renderLikes() {
   });
 }
 
+/* ---------------- video message (one each way) ----------------
+   Uses the native camera (capture) so it works reliably on iOS. Stored in the
+   private `messages` bucket; readable only by the two participants. */
+function openVideo(pid) {
+  const p = person(pid);
+  const s = $('#sheet-video');
+  const file = $('#vm-file');
+  const backend = !!(window.Backend && Backend.enabled);
+  const MAX_VIDEO = 80 * 1024 * 1024; // 80 MB upload cap
+  let picked = null, pickedUrl = null, sheetUrls = [];
+  const revoke = () => { if (pickedUrl) { URL.revokeObjectURL(pickedUrl); pickedUrl = null; } };
+  const dropSheetUrls = () => { sheetUrls.forEach((u) => URL.revokeObjectURL(u)); sheetUrls = []; };
+  const closeSheet = () => { revoke(); dropSheetUrls(); file.onchange = null; s.classList.add('hidden'); };
+
+  const draw = async () => {
+    let mine = null, theirs = null, theirUrl = null, myUrl = null;
+    if (backend) {
+      try { mine = await Backend.myVideoTo(pid); } catch { /* ignore */ }
+      try { theirs = await Backend.videoFrom(pid); } catch { /* ignore */ }
+      if (theirs) { try { theirUrl = await Backend.videoUrl(theirs.video_path); } catch { /* ignore */ } }
+      if (mine && !picked) { try { myUrl = await Backend.videoUrl(mine.video_path); } catch { /* ignore */ } }
+    }
+    dropSheetUrls();
+    if (theirUrl) sheetUrls.push(theirUrl);
+    if (myUrl) sheetUrls.push(myUrl);
+    s.innerHTML = `
+      <div class="sheet-card">
+        <div class="grab"></div>
+        <div class="wz-head"><img src="${avatar(p)}" alt=""><div><div class="wname">${esc(p.name)}, ${p.age}</div><div class="wstep">${esc(t('vm_title'))}</div></div><button class="icon-btn wz-x" id="vm-close">${svgIcon('x')}</button></div>
+        <p class="section-sub" style="margin-bottom:14px">${esc(t('vm_sub'))}</p>
+        <div class="vm-block"><div class="vm-cap">${esc(t('vm_from', { name: p.name }))}</div>
+          ${theirUrl ? `<video class="vm-video" src="${theirUrl}" controls playsinline></video>` : `<div class="vm-empty">${esc(t('vm_none'))}</div>`}</div>
+        <div class="vm-block"><div class="vm-cap">${esc(t('vm_yours'))}</div>
+          ${!backend ? `<p class="ve-note">${svgIcon('info')} ${esc(t('vm_need'))}</p>`
+            : picked ? `<video class="vm-video" src="${pickedUrl}" controls playsinline></video>
+              <div class="vm-acts"><button class="btn btn-ghost btn-sm" id="vm-retake">${svgIcon('shuffle')} ${esc(t('vm_retake'))}</button><button class="btn btn-primary btn-sm" id="vm-send">${svgIcon('check')} ${esc(t('vm_send'))}</button></div>`
+            : myUrl ? `<video class="vm-video" src="${myUrl}" controls playsinline></video>
+              <div class="vm-acts"><button class="btn btn-ghost btn-sm" id="vm-del">${svgIcon('x')} ${esc(t('vm_delete'))}</button></div>
+              <p class="ve-note">${svgIcon('info')} ${esc(t('vm_one'))}</p>`
+            : `<button class="btn btn-primary" id="vm-rec">${svgIcon('video')} ${esc(t('vm_record'))}</button>`}
+        </div>
+      </div>`;
+    $('#vm-close').onclick = closeSheet;
+    s.onclick = (e) => { if (e.target === s) closeSheet(); };
+    const rec = $('#vm-rec'); if (rec) rec.onclick = () => file.click();
+    const rt = $('#vm-retake'); if (rt) rt.onclick = () => file.click();
+    const snd = $('#vm-send'); if (snd) snd.onclick = async () => {
+      snd.disabled = true;
+      try { await Backend.sendVideo(pid, picked); picked = null; revoke(); toast(t('vm_sent', { name: p.name })); draw(); }
+      catch (e) { snd.disabled = false; toast((e && (e.message || e)) || 'Ошибка'); }
+    };
+    const del = $('#vm-del'); if (del) del.onclick = async () => {
+      if (!confirm(t('vm_del_confirm'))) return;
+      try { await Backend.deleteVideo(pid); toast(t('vm_deleted')); draw(); }
+      catch (e) { toast((e && (e.message || e)) || 'Ошибка'); }
+    };
+  };
+  file.onchange = (e) => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    if (f.size > MAX_VIDEO) { toast(t('vm_too_big')); return; }
+    picked = f; revoke(); pickedUrl = URL.createObjectURL(f);
+    draw();
+  };
+  s.classList.remove('hidden');
+  draw();
+}
+
 /* ---------------- match ---------------- */
 function onMutualLike(id, instant = false) {
   APP_STATE.unseen.meet++;
@@ -869,6 +963,7 @@ function showMatchModal(id) {
       <p class="mm-sub">${esc(t('m_sub', { name: p.name }))}</p>
       <div class="mm-btns">
         <button class="btn btn-primary" id="mm-go">${esc(t('m_schedule'))}</button>
+        <button class="btn btn-ghost" id="mm-video">${svgIcon('video')} ${esc(t('vm_open'))}</button>
         <button class="btn btn-ghost" id="mm-msg">${svgIcon('envelope')} ${esc(t('note_open'))}</button>
         <button class="btn btn-ghost" id="mm-later">${esc(t('m_later'))}</button>
       </div>
@@ -876,6 +971,7 @@ function showMatchModal(id) {
   w.classList.remove('hidden');
   heartBurst(innerWidth / 2, innerHeight / 3, 16);
   $('#mm-go').onclick = () => { w.classList.add('hidden'); openWizard(id); };
+  $('#mm-video').onclick = () => { w.classList.add('hidden'); openVideo(id); };
   $('#mm-msg').onclick = () => { w.classList.add('hidden'); openNote(id); };
   $('#mm-later').onclick = () => { w.classList.add('hidden'); renderCurrentView(); };
 }
@@ -890,7 +986,7 @@ function renderMeet() {
     return;
   }
   wrap.innerHTML = list.map((p) => {
-    const d = dyn(p.id);
+    const d = dstate(p.id);
     const off = !d.online;
     const sent = d.note && d.note.mine;
     const unread = d.note && d.note.theirs;
@@ -902,6 +998,7 @@ function renderMeet() {
         <div class="msub">${off ? esc(t('meet_offline')) : `<i class="dot"></i> ${esc(t('d_online'))}${p.km != null ? ' · ' + esc(t('d_km', { km: p.km })) : ''}`}</div>
       </div>
       ${off ? '' : `<div class="macts">
+        <button class="mbtn vid" aria-label="${esc(t('vm_open'))}">${svgIcon('video')}</button>
         <button class="mbtn msg ${sent ? 'sent' : ''}" aria-label="${esc(t('note_open'))}">${svgIcon('envelope')}${unread ? '<i class="ndot"></i>' : ''}</button>
         <button class="go">${esc(t('meet_cta'))}</button>
       </div>`}
@@ -912,6 +1009,7 @@ function renderMeet() {
     $('.mimg', row).onclick = () => openProfileSheet(id);
     const go = $('.go', row); if (go) go.onclick = () => openWizard(id);
     const msg = $('.msg', row); if (msg) msg.onclick = () => openNote(id);
+    const vid = $('.vid', row); if (vid) vid.onclick = () => openVideo(id);
   });
 }
 
@@ -920,7 +1018,7 @@ let wiz = null;
 
 function openWizard(pid) {
   const p = person(pid);
-  dyn(pid).online = true; // partner stays online while planning
+  if (!REAL_DISCOVERY) dyn(pid).online = true; // partner stays online while planning (demo)
   wiz = { pid, alive: true, chooser: null, inside: null, place: '', dateISO: null, time: null };
   const sheet = $('#sheet-wizard');
   sheet.innerHTML = `
@@ -1054,31 +1152,101 @@ function askYesNo(mapName) {
   });
 }
 
+/* ---------------- chooser mini-games ----------------
+   A random game decides who picks the meeting spot. Winner → chooser.
+   Add more games by pushing to CHOOSER_GAMES and writing a play<Name>().  */
+const CHOOSER_GAMES = ['rps', 'dice', 'roulette'];
+const die6 = () => 1 + Math.floor(Math.random() * 6);
+const DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+
+function playChooserGame(w, name) {
+  const g = pickOf(CHOOSER_GAMES);
+  wzQ(t('w_game_' + g));
+  meSays(t('w_game_' + g));
+  if (g === 'dice') return gameDice(w, name);
+  if (g === 'roulette') return gameRoulette(w, name);
+  return gameRPS(w, name);
+}
+
+function gameRPS(w, name) {
+  return new Promise((resolve) => {
+    const moves = [['rock', '✊'], ['scissors', '✌️'], ['paper', '✋']];
+    const beats = { rock: 'scissors', scissors: 'paper', paper: 'rock' };
+    const emo = (k) => moves.find((m) => m[0] === k)[1];
+    const round = (msg) => {
+      if (!w.alive) return;
+      wzZone().innerHTML = `<div class="game">
+        <div class="game-msg">${esc(msg || t('w_game_pick'))}</div>
+        <div class="rps-row">${moves.map(([k, e]) => `<button class="rps-btn" data-m="${k}">${e}</button>`).join('')}</div></div>`;
+      $$('.rps-btn', wzZone()).forEach((b) => { b.onclick = async () => {
+        if (!w.alive) return;
+        const mine = b.dataset.m; const theirs = pickOf(moves)[0];
+        wzZone().innerHTML = `<div class="game"><div class="rps-vs">
+          <div class="rps-pick">${emo(mine)}<span>${esc(t('w_game_you'))}</span></div>
+          <div class="rps-x">×</div>
+          <div class="rps-pick">${emo(theirs)}<span>${esc(name)}</span></div></div></div>`;
+        await sleep(1000); if (!w.alive) return;
+        if (mine === theirs) return round(t('w_game_draw'));
+        resolve(beats[mine] === theirs ? 'me' : 'them');
+      }; });
+    };
+    round();
+  });
+}
+
+function gameDice(w, name) {
+  return new Promise((resolve) => {
+    wzZone().innerHTML = `<div class="game">
+      <div class="game-msg">${esc(t('w_game_dice_sub'))}</div>
+      <div class="dice-row"><div class="die" id="d-me">🎲</div><div class="die-vs">${esc(t('w_game_you'))} · ${esc(name)}</div><div class="die" id="d-them">🎲</div></div>
+      <button class="btn btn-primary" id="d-roll">${esc(t('w_game_roll'))}</button></div>`;
+    $('#d-roll').onclick = async () => {
+      if (!w.alive) return; $('#d-roll').disabled = true;
+      for (let i = 0; i < 10; i++) { if (!w.alive) return; $('#d-me').textContent = pickOf(DICE_FACES); $('#d-them').textContent = pickOf(DICE_FACES); await sleep(80); }
+      let me, them; do { me = die6(); them = die6(); } while (me === them);
+      $('#d-me').textContent = DICE_FACES[me - 1]; $('#d-them').textContent = DICE_FACES[them - 1];
+      await sleep(800); if (!w.alive) return;
+      resolve(me > them ? 'me' : 'them');
+    };
+  });
+}
+
+function gameRoulette(w, name) {
+  return new Promise((resolve) => {
+    wzZone().innerHTML = `<div class="game">
+      <div class="game-msg">${esc(t('w_game_roul_sub'))}</div>
+      <div class="roul-cells"><div class="rcell" id="rc-me">${esc(t('w_game_you'))}</div><div class="rcell" id="rc-them">${esc(name)}</div></div>
+      <button class="btn btn-primary" id="r-spin">${esc(t('w_game_spin'))}</button></div>`;
+    $('#r-spin').onclick = async () => {
+      if (!w.alive) return; $('#r-spin').disabled = true;
+      const win = Math.random() < 0.5 ? 'me' : 'them';
+      const cells = [$('#rc-me'), $('#rc-them')];
+      let steps = 14, i = 0, delay = 70;
+      while (steps-- > 0) {
+        if (!w.alive) return;
+        cells.forEach((c) => c.classList.remove('on'));
+        cells[i++ % 2].classList.add('on');
+        await sleep(delay); delay = Math.min(delay + 14, 280);
+      }
+      cells.forEach((c) => c.classList.remove('on'));
+      cells[win === 'me' ? 0 : 1].classList.add('on');
+      await sleep(700); if (!w.alive) return;
+      resolve(win);
+    };
+  });
+}
+
 async function runWizard() {
   const w = wiz;
   const p = person(w.pid);
   const name = p.name;
+  // start fetching real places now (during the game + Q2) so Q3 isn't blocked
+  w._places = ensureWizardPlaces(w);
 
-  /* ---- Q1: who picks the spot ---- */
+  /* ---- Q1: a mini-game decides who picks the spot ---- */
   wzStep(1);
-  wzQ(t('w_q1'));
-  const my = (await wzOptions([
-    { label: t('w_q1_me'), hot: true },
-    { label: t('w_q1_them', { name }) },
-  ])) === 0 ? 'self' : 'other';
+  w.chooser = await playChooserGame(w, name);
   wzGuard(w);
-  meSays(my === 'self' ? t('w_q1_me') : t('w_q1_them', { name }));
-  await partnerThinks(w);
-  const their = Math.random() < 0.5 ? 'self' : 'other'; // partner's own wish
-  if (my === 'self' && their === 'other') w.chooser = 'me';
-  else if (my === 'other' && their === 'self') w.chooser = 'them';
-  else {
-    partnerSays(t('w_coin'));
-    wzZone().innerHTML = `<div class="coin">?</div>`;
-    await sleep(1700); wzGuard(w);
-    w.chooser = Math.random() < 0.5 ? 'me' : 'them';
-    wzZone().innerHTML = '';
-  }
   partnerSays(w.chooser === 'me' ? t('w_coin_me') : t('w_coin_them', { name }), 'ok');
   await sleep(900); wzGuard(w);
   wzLogClear();
@@ -1117,7 +1285,7 @@ async function wizardIChoose(w, name) {
 
   /* Q3 where exactly */
   wzStep(3); wzLogClear();
-  await ensureWizardPlaces(w);
+  await (w._places || ensureWizardPlaces(w));
   wzGuard(w);
   wzQ(t('w_q3'));
   const pool = placePool(w.inside);
@@ -1177,7 +1345,7 @@ async function wizardTheyChoose(w, name) {
 
   /* Q3 */
   wzStep(3); wzLogClear();
-  await ensureWizardPlaces(w);
+  await (w._places || ensureWizardPlaces(w));
   wzGuard(w);
   wzQ(t('w_q3_ask', { name }));
   const pool = placePool(w.inside);
@@ -1222,7 +1390,7 @@ async function wizardDone(w, p) {
     createdAt: Date.now(),
   };
   APP_STATE.dates.push(d);
-  dyn(w.pid).dateId = d.id;
+  pstate(w.pid).dateId = d.id;
   save();
   // Real mode: sync the scheduled date so it shows in the admin.
   if (window.Backend && Backend.enabled) {
@@ -1299,7 +1467,7 @@ function renderDates() {
       if (!d) return;
       const p = person(d.personId);
       APP_STATE.dates = APP_STATE.dates.filter((x) => x.id !== id);
-      if (dyn(d.personId).dateId === id) dyn(d.personId).dateId = null;
+      if (pstate(d.personId).dateId === id) pstate(d.personId).dateId = null;
       save();
       toast(t('dt_canceled', { name: p.name }), avatar(p));
       renderDates();

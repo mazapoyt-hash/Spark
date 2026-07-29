@@ -532,7 +532,12 @@ function renderUsersDemo() {
 /* ---------------- bots ---------------- */
 const LANGS_ALL = ['en', 'de', 'ru', 'uk', 'fr', 'es', 'it', 'pl', 'tr'];
 async function geocodeCity(city) {
-  const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(city), { headers: { Accept: 'application/json' } });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  let r;
+  try { r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(city), { headers: { Accept: 'application/json' }, signal: ctrl.signal }); }
+  catch { throw new Error('геокодер недоступен'); }
+  finally { clearTimeout(timer); }
   if (!r.ok) throw new Error('геокодер недоступен');
   const j = await r.json();
   if (!j.length) throw new Error('город не найден');

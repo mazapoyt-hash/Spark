@@ -138,6 +138,48 @@ drop policy if exists "dates delete own or admin" on public.dates;
 create policy "dates delete own or admin" on public.dates
   for delete using (auth.uid() = user_id or public.is_admin());
 
+-- ---------- messages (one video each way, per match) ----------
+create table if not exists public.messages (
+  id          uuid primary key default gen_random_uuid(),
+  sender_id   uuid not null references auth.users(id) on delete cascade,
+  receiver_id uuid not null,          -- real user (bots don't receive) — no FK so bot ids are allowed
+  video_path  text not null,
+  created_at  timestamptz not null default now(),
+  unique (sender_id, receiver_id)     -- one active video per direction
+);
+alter table public.messages enable row level security;
+drop policy if exists "msg read participant" on public.messages;
+create policy "msg read participant" on public.messages
+  for select using (auth.uid() = sender_id or auth.uid() = receiver_id);
+drop policy if exists "msg write own" on public.messages;
+create policy "msg write own" on public.messages
+  for insert with check (auth.uid() = sender_id);
+drop policy if exists "msg update own" on public.messages;
+create policy "msg update own" on public.messages
+  for update using (auth.uid() = sender_id);
+drop policy if exists "msg delete own" on public.messages;
+create policy "msg delete own" on public.messages
+  for delete using (auth.uid() = sender_id);
+
+insert into storage.buckets (id, name, public)
+  values ('messages', 'messages', false) on conflict (id) do nothing;
+drop policy if exists "msgfile read participant" on storage.objects;
+create policy "msgfile read participant" on storage.objects
+  for select using (
+    bucket_id = 'messages' and (
+      (storage.foldername(name))[1] = auth.uid()::text
+      or exists (select 1 from public.messages m where m.video_path = name and m.receiver_id = auth.uid())
+    ));
+drop policy if exists "msgfile write own" on storage.objects;
+create policy "msgfile write own" on storage.objects
+  for insert with check (bucket_id = 'messages' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "msgfile update own" on storage.objects;
+create policy "msgfile update own" on storage.objects
+  for update using (bucket_id = 'messages' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "msgfile delete own" on storage.objects;
+create policy "msgfile delete own" on storage.objects
+  for delete using (bucket_id = 'messages' and (storage.foldername(name))[1] = auth.uid()::text);
+
 -- ---------- private storage bucket for selfies ----------
 insert into storage.buckets (id, name, public)
   values ('selfies', 'selfies', false)
