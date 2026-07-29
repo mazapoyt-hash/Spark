@@ -1069,31 +1069,99 @@ function askYesNo(mapName) {
   });
 }
 
+/* ---------------- chooser mini-games ----------------
+   A random game decides who picks the meeting spot. Winner → chooser.
+   Add more games by pushing to CHOOSER_GAMES and writing a play<Name>().  */
+const CHOOSER_GAMES = ['rps', 'dice', 'roulette'];
+const die6 = () => 1 + Math.floor(Math.random() * 6);
+const DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+
+function playChooserGame(w, name) {
+  const g = pickOf(CHOOSER_GAMES);
+  wzQ(t('w_game_' + g));
+  meSays(t('w_game_' + g));
+  if (g === 'dice') return gameDice(w, name);
+  if (g === 'roulette') return gameRoulette(w, name);
+  return gameRPS(w, name);
+}
+
+function gameRPS(w, name) {
+  return new Promise((resolve) => {
+    const moves = [['rock', '✊'], ['scissors', '✌️'], ['paper', '✋']];
+    const beats = { rock: 'scissors', scissors: 'paper', paper: 'rock' };
+    const emo = (k) => moves.find((m) => m[0] === k)[1];
+    const round = (msg) => {
+      if (!w.alive) return;
+      wzZone().innerHTML = `<div class="game">
+        <div class="game-msg">${esc(msg || t('w_game_pick'))}</div>
+        <div class="rps-row">${moves.map(([k, e]) => `<button class="rps-btn" data-m="${k}">${e}</button>`).join('')}</div></div>`;
+      $$('.rps-btn', wzZone()).forEach((b) => { b.onclick = async () => {
+        if (!w.alive) return;
+        const mine = b.dataset.m; const theirs = pickOf(moves)[0];
+        wzZone().innerHTML = `<div class="game"><div class="rps-vs">
+          <div class="rps-pick">${emo(mine)}<span>${esc(t('w_game_you'))}</span></div>
+          <div class="rps-x">×</div>
+          <div class="rps-pick">${emo(theirs)}<span>${esc(name)}</span></div></div></div>`;
+        await sleep(1000); if (!w.alive) return;
+        if (mine === theirs) return round(t('w_game_draw'));
+        resolve(beats[mine] === theirs ? 'me' : 'them');
+      }; });
+    };
+    round();
+  });
+}
+
+function gameDice(w, name) {
+  return new Promise((resolve) => {
+    wzZone().innerHTML = `<div class="game">
+      <div class="game-msg">${esc(t('w_game_dice_sub'))}</div>
+      <div class="dice-row"><div class="die" id="d-me">🎲</div><div class="die-vs">${esc(t('w_game_you'))} · ${esc(name)}</div><div class="die" id="d-them">🎲</div></div>
+      <button class="btn btn-primary" id="d-roll">${esc(t('w_game_roll'))}</button></div>`;
+    $('#d-roll').onclick = async () => {
+      if (!w.alive) return; $('#d-roll').disabled = true;
+      for (let i = 0; i < 10; i++) { if (!w.alive) return; $('#d-me').textContent = pickOf(DICE_FACES); $('#d-them').textContent = pickOf(DICE_FACES); await sleep(80); }
+      let me, them; do { me = die6(); them = die6(); } while (me === them);
+      $('#d-me').textContent = DICE_FACES[me - 1]; $('#d-them').textContent = DICE_FACES[them - 1];
+      await sleep(800); if (!w.alive) return;
+      resolve(me > them ? 'me' : 'them');
+    };
+  });
+}
+
+function gameRoulette(w, name) {
+  return new Promise((resolve) => {
+    wzZone().innerHTML = `<div class="game">
+      <div class="game-msg">${esc(t('w_game_roul_sub'))}</div>
+      <div class="roul-cells"><div class="rcell" id="rc-me">${esc(t('w_game_you'))}</div><div class="rcell" id="rc-them">${esc(name)}</div></div>
+      <button class="btn btn-primary" id="r-spin">${esc(t('w_game_spin'))}</button></div>`;
+    $('#r-spin').onclick = async () => {
+      if (!w.alive) return; $('#r-spin').disabled = true;
+      const win = Math.random() < 0.5 ? 'me' : 'them';
+      const cells = [$('#rc-me'), $('#rc-them')];
+      let steps = 14, i = 0, delay = 70;
+      while (steps-- > 0) {
+        if (!w.alive) return;
+        cells.forEach((c) => c.classList.remove('on'));
+        cells[i++ % 2].classList.add('on');
+        await sleep(delay); delay = Math.min(delay + 14, 280);
+      }
+      cells.forEach((c) => c.classList.remove('on'));
+      cells[win === 'me' ? 0 : 1].classList.add('on');
+      await sleep(700); if (!w.alive) return;
+      resolve(win);
+    };
+  });
+}
+
 async function runWizard() {
   const w = wiz;
   const p = person(w.pid);
   const name = p.name;
 
-  /* ---- Q1: who picks the spot ---- */
+  /* ---- Q1: a mini-game decides who picks the spot ---- */
   wzStep(1);
-  wzQ(t('w_q1'));
-  const my = (await wzOptions([
-    { label: t('w_q1_me'), hot: true },
-    { label: t('w_q1_them', { name }) },
-  ])) === 0 ? 'self' : 'other';
+  w.chooser = await playChooserGame(w, name);
   wzGuard(w);
-  meSays(my === 'self' ? t('w_q1_me') : t('w_q1_them', { name }));
-  await partnerThinks(w);
-  const their = Math.random() < 0.5 ? 'self' : 'other'; // partner's own wish
-  if (my === 'self' && their === 'other') w.chooser = 'me';
-  else if (my === 'other' && their === 'self') w.chooser = 'them';
-  else {
-    partnerSays(t('w_coin'));
-    wzZone().innerHTML = `<div class="coin">?</div>`;
-    await sleep(1700); wzGuard(w);
-    w.chooser = Math.random() < 0.5 ? 'me' : 'them';
-    wzZone().innerHTML = '';
-  }
   partnerSays(w.chooser === 'me' ? t('w_coin_me') : t('w_coin_them', { name }), 'ok');
   await sleep(900); wzGuard(w);
   wzLogClear();

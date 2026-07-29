@@ -928,6 +928,25 @@ input[type="date"].input, input[type="time"].input { color-scheme: dark; }
 }
 @keyframes spinY { from { transform: rotateY(0); } to { transform: rotateY(1800deg); } }
 @keyframes spin360 { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+/* ---------- chooser mini-games ---------- */
+.game { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 10px 0 4px; animation: fadeIn 0.3s; }
+.game-msg { color: var(--muted); font-size: 14.5px; font-weight: 600; text-align: center; }
+.game .btn { min-width: 160px; }
+.rps-row { display: flex; gap: 14px; }
+.rps-btn { width: 76px; height: 76px; border-radius: 20px; background: var(--card); border: 1.5px solid var(--stroke-2); font-size: 36px; line-height: 1; display: grid; place-items: center; transition: transform 0.12s, border-color 0.15s; }
+.rps-btn:hover { border-color: var(--vio-2); }
+.rps-btn:active { transform: scale(0.92); }
+.rps-vs { display: flex; align-items: center; justify-content: center; gap: 18px; margin: 10px 0; }
+.rps-pick { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 54px; animation: cardIn 0.35s ease; }
+.rps-pick span { font-size: 13px; font-weight: 700; color: var(--muted); }
+.rps-x { font-size: 26px; color: var(--faint); font-weight: 800; }
+.dice-row { display: flex; align-items: center; gap: 18px; }
+.die { width: 82px; height: 82px; border-radius: 20px; background: var(--card); border: 1.5px solid var(--stroke-2); font-size: 46px; display: grid; place-items: center; }
+.die-vs { font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; }
+.roul-cells { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; max-width: 320px; }
+.rcell { padding: 22px 12px; border-radius: 16px; background: var(--card); border: 2px solid var(--stroke-2); text-align: center; font-weight: 800; font-size: 16px; color: var(--muted); transition: all 0.1s; }
+.rcell.on { background: var(--grad); border-color: transparent; color: #fff; box-shadow: var(--glow); transform: scale(1.04); }
 .fpill.spin svg { animation: spin360 0.6s linear; }
 
 /* done state */
