@@ -104,7 +104,7 @@ const distLabel = (p) => (kmStr(p) ? `${t('d_km', { km: kmStr(p) })} ${t('map_fr
 const myPhotos = () => (APP_STATE.profile.photos || []);
 const myAvatar = () => myPhotos()[0] || avatarDataURI(APP_STATE.profile.name || 'You', 330, 275);
 /** photos to show for a person (demo people have one generated portrait) */
-const personPhotos = (p) => [avatar(p)];
+const personPhotos = (p) => (p._photos && p._photos.length ? p._photos : [avatar(p)]);
 
 function fmtDate(iso) {
   const loc = APP_STATE.profile.locale;
@@ -162,7 +162,15 @@ let realLoading = null;
 
 const hashHue = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; };
 const mapRealUser = (u) => ({ id: u.id, name: u.name || '—', age: u.age || '', gender: u.gender || '', langs: u.langs || [], km: (u.km == null ? null : u.km), lat: u.lat, lng: u.lng, hues: [hashHue(u.id), (hashHue(u.id) + 40) % 360], _photos: u.photos || [], _real: true, _bot: !!u.is_bot, _behavior: u.behavior || 'passive' });
-const rst = (id) => ({ online: true, likedMe: realLikedMe.has(id), iLiked: realLikes.has(id), declined: realPasses.has(id), dateId: null, note: null });
+const rst = (id) => { const ps = (APP_STATE.realState && APP_STATE.realState[id]) || {}; return { online: true, likedMe: realLikedMe.has(id), iLiked: realLikes.has(id), declined: realPasses.has(id), dateId: ps.dateId || null, note: ps.note || null }; };
+/* mutable per-person state (note / dateId). Demo uses APP_STATE.people; real
+   users & bots use APP_STATE.realState (they aren't in the demo people map). */
+function pstate(id) {
+  if (REAL_DISCOVERY) { APP_STATE.realState = APP_STATE.realState || {}; return (APP_STATE.realState[id] = APP_STATE.realState[id] || { note: null, dateId: null }); }
+  return dyn(id) || {};
+}
+/* read-only display state (online/note/dateId/like flags), demo or real */
+const dstate = (id) => (REAL_DISCOVERY ? rst(id) : dyn(id));
 const person = (id) => (REAL_DISCOVERY ? REAL_BY_ID[id] : DEMO_BY_ID[id]) || { name: '?', age: '', hues: [270, 300] };
 
 async function loadRealDiscovery() {
@@ -205,7 +213,7 @@ const likesList = () => (REAL_DISCOVERY
 ).sort((a, b) => (a.km == null ? 1e9 : a.km) - (b.km == null ? 1e9 : b.km));
 
 const matchList = () => (REAL_DISCOVERY
-  ? REAL_PEOPLE.filter((p) => { const d = rst(p.id); return d.likedMe && d.iLiked && !d.declined; })
+  ? REAL_PEOPLE.filter((p) => { const d = rst(p.id); return d.likedMe && d.iLiked && !d.declined && !d.dateId; })
   : DEMO_PEOPLE.filter((p) => { const d = dyn(p.id); return d.likedMe && d.iLiked && !d.declined && !d.dateId; }));
 
 const onlineNearby = () => (REAL_DISCOVERY
@@ -298,10 +306,17 @@ function renderDiscover() {
   $('#fpills').innerHTML = `
     <button class="fpill ${discoverFilter === 'all' ? 'on' : ''}" data-f="all">${svgIcon('sparkle')} ${esc(t('f_all'))}</button>
     <button class="fpill ${discoverFilter === 'near' ? 'on' : ''}" data-f="near">${esc(t('f_near'))}</button>
-    <span class="fpill static"><i class="dot"></i>${onlineNearby()} ${esc(t('d_online'))}</span>`;
+    <span class="fpill static"><i class="dot"></i>${onlineNearby()} ${esc(t('d_online'))}</span>
+    ${(window.Backend && Backend.enabled) ? `<button class="fpill" id="fpill-refresh">${svgIcon('shuffle')} ${esc(t('d_refresh'))}</button>` : ''}`;
   $$('#fpills .fpill[data-f]').forEach((b) => {
     b.onclick = () => { discoverFilter = b.dataset.f; centralId = null; renderDiscover(); };
   });
+  const rfr = $('#fpill-refresh');
+  if (rfr) rfr.onclick = () => {
+    rfr.classList.add('spin');
+    ensureGeo(() => {});
+    ensureRealDiscovery(true).then(() => { centralId = null; if (currentTab === 'discover') renderCurrentView(); });
+  };
 
   const deck = $('#deck');
   const list = orbitList();
@@ -464,7 +479,7 @@ function openGallery(images, start = 0) {
 /* ---------------- profile / info sheet ---------------- */
 function openProfileSheet(pid) {
   const p = person(pid);
-  const d = dyn(pid);
+  const d = dstate(pid);
   const photos = personPhotos(p);
   const s = $('#sheet-profile');
   s.innerHTML = `
@@ -761,7 +776,7 @@ function notePresets() {
 }
 function openNote(pid) {
   const p = person(pid);
-  const d = dyn(pid);
+  const d = pstate(pid);
   const s = $('#sheet-note');
   const draw = () => {
     const n = d.note;
@@ -797,8 +812,8 @@ function openNote(pid) {
       toast(t('note_sent', { name: p.name }), avatar(p));
       if (currentTab === 'meet') renderMeet();
       if (firstTime) setTimeout(() => {
-        if (dyn(pid).note && !dyn(pid).note.theirs) {
-          dyn(pid).note.theirs = t('note_reply');
+        if (pstate(pid).note && !pstate(pid).note.theirs) {
+          pstate(pid).note.theirs = t('note_reply');
           save();
           if (!$('#sheet-note').classList.contains('hidden')) draw();
           if (currentTab === 'meet') renderMeet();
@@ -890,7 +905,7 @@ function renderMeet() {
     return;
   }
   wrap.innerHTML = list.map((p) => {
-    const d = dyn(p.id);
+    const d = dstate(p.id);
     const off = !d.online;
     const sent = d.note && d.note.mine;
     const unread = d.note && d.note.theirs;
@@ -920,7 +935,7 @@ let wiz = null;
 
 function openWizard(pid) {
   const p = person(pid);
-  dyn(pid).online = true; // partner stays online while planning
+  if (!REAL_DISCOVERY) dyn(pid).online = true; // partner stays online while planning (demo)
   wiz = { pid, alive: true, chooser: null, inside: null, place: '', dateISO: null, time: null };
   const sheet = $('#sheet-wizard');
   sheet.innerHTML = `
@@ -1222,7 +1237,7 @@ async function wizardDone(w, p) {
     createdAt: Date.now(),
   };
   APP_STATE.dates.push(d);
-  dyn(w.pid).dateId = d.id;
+  pstate(w.pid).dateId = d.id;
   save();
   // Real mode: sync the scheduled date so it shows in the admin.
   if (window.Backend && Backend.enabled) {
@@ -1299,7 +1314,7 @@ function renderDates() {
       if (!d) return;
       const p = person(d.personId);
       APP_STATE.dates = APP_STATE.dates.filter((x) => x.id !== id);
-      if (dyn(d.personId).dateId === id) dyn(d.personId).dateId = null;
+      if (pstate(d.personId).dateId === id) pstate(d.personId).dateId = null;
       save();
       toast(t('dt_canceled', { name: p.name }), avatar(p));
       renderDates();
