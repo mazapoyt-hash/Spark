@@ -695,7 +695,7 @@ input[type="date"].input, input[type="time"].input { color-scheme: dark; }
 /* ---------- meet list ---------- */
 .mlist { display: flex; flex-direction: column; gap: 13px; margin-top: 18px; }
 .mrow {
-  display: flex; align-items: center; gap: 14px;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   padding: 12px;
   border-radius: var(--radius);
   background: var(--card);
@@ -711,7 +711,7 @@ input[type="date"].input, input[type="time"].input { color-scheme: dark; }
 .mrow .mname { font-weight: 800; font-size: 17px; display: flex; align-items: center; gap: 7px; }
 .mrow .msub { color: var(--muted); font-size: 12.5px; margin-top: 3px; display: flex; align-items: center; gap: 6px; }
 .mrow .go {
-  flex: none;
+  flex: 1;
   padding: 11px 16px;
   border-radius: 999px;
   background: var(--grad);
@@ -1045,7 +1045,7 @@ input[type="range"] { flex: 1; accent-color: var(--vio-2); }
 @keyframes fadeOut { to { opacity: 0; transform: translateY(-14px); } }
 
 /* ---------- meet row actions ---------- */
-.mrow .macts { display: flex; gap: 8px; flex: none; align-items: center; }
+.mrow .macts { display: flex; gap: 8px; align-items: center; width: 100%; margin-top: 8px; }
 .mrow .mbtn {
   width: 44px; height: 44px; border-radius: 50%;
   background: var(--card-2); border: 1px solid var(--stroke-2);

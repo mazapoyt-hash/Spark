@@ -995,7 +995,7 @@ function renderMeet() {
       <img class="mimg" src="${avatar(p)}" alt="">
       <div class="mtxt">
         <div class="mname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:16px;height:16px;font-size:9px">${svgIcon('check')}</span></div>
-        <div class="msub">${off ? esc(t('meet_offline')) : `<i class="dot"></i> ${esc(t('d_online'))}${p.km != null ? ' · ' + esc(t('d_km', { km: p.km })) : ''}`}</div>
+        <div class="msub">${off ? esc(t('meet_offline')) : `<i class="dot"></i> ${esc(t('d_online'))}${kmStr(p) ? ' · ' + esc(t('d_km', { km: kmStr(p) })) : ''}`}</div>
       </div>
       ${off ? '' : `<div class="macts">
         <button class="mbtn vid" aria-label="${esc(t('vm_open'))}">${svgIcon('video')}</button>
