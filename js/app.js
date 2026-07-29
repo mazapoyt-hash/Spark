@@ -55,7 +55,7 @@ function loadState() {
 let APP_STATE = loadState();
 window.APP_STATE = APP_STATE;
 
-const save = () => localStorage.setItem(LS_KEY, JSON.stringify(APP_STATE));
+const save = () => { try { localStorage.setItem(LS_KEY, JSON.stringify(APP_STATE)); } catch { /* quota / private mode */ } };
 
 /* ---------------- utils ---------------- */
 const $ = (s, r) => (r || document).querySelector(s);
@@ -172,7 +172,7 @@ function pstate(id) {
 }
 /* read-only display state (online/note/dateId/like flags), demo or real */
 const dstate = (id) => (REAL_DISCOVERY ? rst(id) : dyn(id));
-const person = (id) => (REAL_DISCOVERY ? REAL_BY_ID[id] : DEMO_BY_ID[id]) || { name: '?', age: '', hues: [270, 300] };
+const person = (id) => (REAL_DISCOVERY ? REAL_BY_ID[id] : DEMO_BY_ID[id]) || { name: '?', age: '', hues: [270, 300], langs: [] };
 
 async function loadRealDiscovery() {
   if (!(window.Backend && Backend.enabled)) { REAL_DISCOVERY = false; return false; }
@@ -180,10 +180,10 @@ async function loadRealDiscovery() {
   if (!u) { REAL_DISCOVERY = false; return false; }
   try {
     if (USER_GEO) { try { await Backend.updateMyGeo(USER_GEO.lat, USER_GEO.lng); } catch { /* non-fatal */ } }
-    const [nearby, mine, ofme] = await Promise.all([
-      Backend.nearbyUsers(USER_GEO, APP_STATE.profile.radiusKm || 10),
-      Backend.myLikes(), Backend.likesOfMe(),
-    ]);
+    const nearby = await Backend.nearbyUsers(USER_GEO, APP_STATE.profile.radiusKm || 10);
+    // likes are optional — a hiccup there shouldn't drop the whole feed to demo
+    let mine = [], ofme = [];
+    try { [mine, ofme] = await Promise.all([Backend.myLikes(), Backend.likesOfMe()]); } catch { /* keep empty */ }
     REAL_PEOPLE = nearby.map(mapRealUser);
     REAL_BY_ID = Object.fromEntries(REAL_PEOPLE.map((p) => [p.id, p]));
     realLikes = new Set(mine); realLikedMe = new Set(ofme);
@@ -199,7 +199,8 @@ async function loadRealDiscovery() {
 function ensureRealDiscovery(force) {
   if (!(window.Backend && Backend.enabled)) return Promise.resolve(false);
   if (!force && realLoading) return realLoading;
-  realLoading = loadRealDiscovery();
+  // don't cache a failed load — let the next tab switch / refresh retry
+  realLoading = loadRealDiscovery().then((ok) => { if (!ok) realLoading = null; return ok; });
   return realLoading;
 }
 
@@ -535,6 +536,15 @@ const myLoc = () => USER_GEO || MY_LOCATION;
 /** demo places are anchored around Berlin; when we know the real location
  *  we shift them by the same vector so distances stay realistic AND the
  *  route opened in Maps matches the in-app estimate. */
+/* fetch with an abort timeout — keyless public APIs can stall, and an un-timed
+   fetch would hang the wizard / bot creation indefinitely. */
+async function fetchT(url, ms = 12000, opts) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try { return await fetch(url, { ...(opts || {}), signal: ctrl.signal }); }
+  finally { clearTimeout(timer); }
+}
+
 function placeGeo(name) {
   if (REAL_PLACE_GEO[name]) return REAL_PLACE_GEO[name]; // real OSM coordinates
   const g = PLACE_GEO[name];
@@ -561,7 +571,7 @@ async function fetchPlaces(center) {
     + `node["leisure"~"^(park|garden)$"](around:2500,${center.lat},${center.lng});`
     + `node["tourism"~"^(viewpoint|museum|gallery)$"](around:2500,${center.lat},${center.lng});`
     + `);out 80;`;
-  const r = await fetch(PLACES_URL + '?data=' + encodeURIComponent(q));
+  const r = await fetchT(PLACES_URL + '?data=' + encodeURIComponent(q), 15000);
   if (!r.ok) throw new Error('overpass ' + r.status);
   const els = (await r.json()).elements || [];
   const seen = new Set(); const inside = []; const outside = [];
@@ -675,7 +685,7 @@ async function fetchRoutes(name, me, geo) {
         costing, units: 'kilometers', directions_type: 'none',
       };
       // GET with ?json= avoids a CORS preflight (simple request)
-      const r = await fetch(ROUTER_URL + '?json=' + encodeURIComponent(JSON.stringify(body)));
+      const r = await fetchT(ROUTER_URL + '?json=' + encodeURIComponent(JSON.stringify(body)), 12000);
       if (!r.ok) return;
       const sum = (await r.json())?.trip?.summary;
       if (sum && sum.time != null) {
@@ -871,9 +881,11 @@ function openVideo(pid) {
   const s = $('#sheet-video');
   const file = $('#vm-file');
   const backend = !!(window.Backend && Backend.enabled);
-  let picked = null, pickedUrl = null;
+  const MAX_VIDEO = 80 * 1024 * 1024; // 80 MB upload cap
+  let picked = null, pickedUrl = null, sheetUrls = [];
   const revoke = () => { if (pickedUrl) { URL.revokeObjectURL(pickedUrl); pickedUrl = null; } };
-  const closeSheet = () => { revoke(); file.onchange = null; s.classList.add('hidden'); };
+  const dropSheetUrls = () => { sheetUrls.forEach((u) => URL.revokeObjectURL(u)); sheetUrls = []; };
+  const closeSheet = () => { revoke(); dropSheetUrls(); file.onchange = null; s.classList.add('hidden'); };
 
   const draw = async () => {
     let mine = null, theirs = null, theirUrl = null, myUrl = null;
@@ -883,6 +895,9 @@ function openVideo(pid) {
       if (theirs) { try { theirUrl = await Backend.videoUrl(theirs.video_path); } catch { /* ignore */ } }
       if (mine && !picked) { try { myUrl = await Backend.videoUrl(mine.video_path); } catch { /* ignore */ } }
     }
+    dropSheetUrls();
+    if (theirUrl) sheetUrls.push(theirUrl);
+    if (myUrl) sheetUrls.push(myUrl);
     s.innerHTML = `
       <div class="sheet-card">
         <div class="grab"></div>
@@ -918,6 +933,7 @@ function openVideo(pid) {
   file.onchange = (e) => {
     const f = e.target.files[0]; e.target.value = '';
     if (!f) return;
+    if (f.size > MAX_VIDEO) { toast(t('vm_too_big')); return; }
     picked = f; revoke(); pickedUrl = URL.createObjectURL(f);
     draw();
   };
@@ -1224,6 +1240,8 @@ async function runWizard() {
   const w = wiz;
   const p = person(w.pid);
   const name = p.name;
+  // start fetching real places now (during the game + Q2) so Q3 isn't blocked
+  w._places = ensureWizardPlaces(w);
 
   /* ---- Q1: a mini-game decides who picks the spot ---- */
   wzStep(1);
@@ -1267,7 +1285,7 @@ async function wizardIChoose(w, name) {
 
   /* Q3 where exactly */
   wzStep(3); wzLogClear();
-  await ensureWizardPlaces(w);
+  await (w._places || ensureWizardPlaces(w));
   wzGuard(w);
   wzQ(t('w_q3'));
   const pool = placePool(w.inside);
@@ -1327,7 +1345,7 @@ async function wizardTheyChoose(w, name) {
 
   /* Q3 */
   wzStep(3); wzLogClear();
-  await ensureWizardPlaces(w);
+  await (w._places || ensureWizardPlaces(w));
   wzGuard(w);
   wzQ(t('w_q3_ask', { name }));
   const pool = placePool(w.inside);
