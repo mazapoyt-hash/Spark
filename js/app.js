@@ -1947,7 +1947,9 @@ function openProfileEditor(isFirstRun = false) {
     // Real mode: mirror the profile (incl. photos) into Supabase so the admin
     // can view and compare it against the verification selfie.
     if (window.Backend && Backend.enabled) {
-      try { await Backend.upsertProfile({ name, age, gender: pr.gender, photoBlobs: photos.map(dataUrlToBlob) }); }
+      // keep already-uploaded photos (https URLs) as-is; only new data-URLs upload
+      const photoItems = photos.map((src) => (/^https?:/i.test(src) ? { url: src } : { blob: dataUrlToBlob(src) }));
+      try { await Backend.upsertProfile({ name, age, gender: pr.gender, lookingFor: pr.lookingFor, langs, photoItems }); }
       catch { /* non-fatal */ }
     }
     if (isFirstRun) {
@@ -2156,6 +2158,28 @@ function startSimulation() {
   nextLike();
 }
 
+/* A signed-in user opening the app on a new device already has a profile in
+   Supabase — load it and go straight in instead of showing a blank form (which
+   looked like "a new account was created"). Returns true if hydrated. */
+async function hydrateReturningUser(user) {
+  let prof = null;
+  try { prof = await Backend.getProfile(user.id); } catch { prof = null; }
+  if (!prof || !prof.name) return false; // genuinely new — let onboarding run
+  const p = APP_STATE.profile;
+  p.id = user.id;
+  p.name = prof.name;
+  if (prof.age != null) p.age = prof.age;
+  if (prof.gender) p.gender = prof.gender;
+  if (prof.looking_for) p.lookingFor = prof.looking_for;
+  if (Array.isArray(prof.langs) && prof.langs.length) p.langs = prof.langs;
+  if (Array.isArray(prof.photos) && prof.photos.length) p.photos = prof.photos;
+  APP_STATE.onboarded = true;
+  save();
+  try { await syncVerification(); } catch { /* status syncs again on resync */ }
+  enterMain();
+  return true;
+}
+
 /* ---------------- boot ---------------- */
 function enterMain() {
   $('#onboarding').classList.add('hidden');
@@ -2186,9 +2210,10 @@ function boot() {
     // (e.g. returned from an OAuth/email link), jump to the profile form.
     $('#onboarding').classList.remove('hidden'); $('#main').classList.add('hidden');
     $('#ob-form').classList.add('hidden'); $('#ob-auth').classList.add('hidden');
-    Backend.user().then((u) => { if (u) openProfileEditor(true); else $('#ob-welcome').classList.remove('hidden'); })
+    const onSignedIn = (u) => hydrateReturningUser(u).then((done) => { if (!done) openProfileEditor(true); });
+    Backend.user().then((u) => { if (u) onSignedIn(u); else $('#ob-welcome').classList.remove('hidden'); })
       .catch(() => $('#ob-welcome').classList.remove('hidden'));
-    Backend.onAuth((u) => { if (u && !APP_STATE.onboarded && $('#main').classList.contains('hidden')) openProfileEditor(true); });
+    Backend.onAuth((u) => { if (u && !APP_STATE.onboarded && $('#main').classList.contains('hidden')) onSignedIn(u); });
   } else {
     $('#onboarding').classList.remove('hidden');
     $('#main').classList.add('hidden');

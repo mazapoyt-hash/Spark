@@ -41,22 +41,29 @@
     },
 
     /* ---- profiles ---- */
-    async upsertProfile({ name, age, gender, photoBlobs }) {
+    async upsertProfile({ name, age, gender, lookingFor, langs, photoItems }) {
       const { data: { user } } = await client.auth.getUser();
       if (!user) throw new Error('not signed in');
       // Core profile first, on its own — so the user always lands in the admin
       // even if the photo upload (storage policy / column) isn't ready.
       const { error } = await client.from('profiles').upsert({ id: user.id, name, age, gender });
       if (error) throw error;
+      // Preferences (langs / who they're looking for) — best-effort so an older
+      // schema without these columns doesn't drop the whole profile.
+      try { await client.from('profiles').update({ langs: langs || null, looking_for: lookingFor || null }).eq('id', user.id); }
+      catch (e) { try { console.warn('profile prefs update failed:', e.message || e); } catch { /* no console */ } }
       // Photos are best-effort; a failure here must not drop the profile row.
-      // They go in the PUBLIC 'photos' bucket so other users can see them in
-      // discovery; we store their public URLs.
-      if (photoBlobs && photoBlobs.length) {
+      // `photoItems` preserves order and mixes already-uploaded photos ({url})
+      // with newly picked ones ({blob}); only the blobs are uploaded. They go in
+      // the PUBLIC 'photos' bucket so other users see them in discovery.
+      if (photoItems && photoItems.length) {
         try {
           const urls = [];
-          for (let i = 0; i < photoBlobs.length; i++) {
+          for (let i = 0; i < photoItems.length; i++) {
+            const it = photoItems[i];
+            if (it && it.url) { urls.push(it.url); continue; } // keep existing
             const path = `${user.id}/photo-${i}.jpg`;
-            const up = await client.storage.from('photos').upload(path, photoBlobs[i], { contentType: 'image/jpeg', upsert: true });
+            const up = await client.storage.from('photos').upload(path, it.blob, { contentType: 'image/jpeg', upsert: true });
             if (up.error) throw up.error;
             urls.push(client.storage.from('photos').getPublicUrl(path).data.publicUrl);
           }

@@ -17,6 +17,8 @@ alter table public.profiles add column if not exists photos text[];
 alter table public.profiles add column if not exists lat double precision;
 alter table public.profiles add column if not exists lng double precision;
 alter table public.profiles add column if not exists geo_updated_at timestamptz;
+alter table public.profiles add column if not exists langs text[];        -- spoken languages (for discovery)
+alter table public.profiles add column if not exists looking_for text;    -- 'm' | 'w' | 'all'
 alter table public.profiles enable row level security;
 
 drop policy if exists "profiles read own" on public.profiles;
