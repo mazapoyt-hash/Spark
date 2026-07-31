@@ -536,6 +536,9 @@ const myLoc = () => USER_GEO || MY_LOCATION;
 /** demo places are anchored around Berlin; when we know the real location
  *  we shift them by the same vector so distances stay realistic AND the
  *  route opened in Maps matches the in-app estimate. */
+/* race a promise against a timeout so a stalled backend call can't hang the UI */
+const withTimeout = (pr, ms, fb = null) => Promise.race([Promise.resolve(pr), new Promise((r) => setTimeout(() => r(fb), ms))]);
+
 /* fetch with an abort timeout — keyless public APIs can stall, and an un-timed
    fetch would hang the wizard / bot creation indefinitely. */
 async function fetchT(url, ms = 12000, opts) {
@@ -882,36 +885,34 @@ function openVideo(pid) {
   const file = $('#vm-file');
   const backend = !!(window.Backend && Backend.enabled);
   const MAX_VIDEO = 80 * 1024 * 1024; // 80 MB upload cap
-  let picked = null, pickedUrl = null, sheetUrls = [];
+  let picked = null, pickedUrl = null;
+  let loaded = false, theirUrl = null, myUrl = null;
+  const urls = [];
   const revoke = () => { if (pickedUrl) { URL.revokeObjectURL(pickedUrl); pickedUrl = null; } };
-  const dropSheetUrls = () => { sheetUrls.forEach((u) => URL.revokeObjectURL(u)); sheetUrls = []; };
-  const closeSheet = () => { revoke(); dropSheetUrls(); file.onchange = null; s.classList.add('hidden'); };
+  const dropUrls = () => { urls.forEach((u) => URL.revokeObjectURL(u)); urls.length = 0; };
+  const closeSheet = () => { revoke(); dropUrls(); file.onchange = null; s.classList.add('hidden'); };
 
-  const draw = async () => {
-    let mine = null, theirs = null, theirUrl = null, myUrl = null;
-    if (backend) {
-      try { mine = await Backend.myVideoTo(pid); } catch { /* ignore */ }
-      try { theirs = await Backend.videoFrom(pid); } catch { /* ignore */ }
-      if (theirs) { try { theirUrl = await Backend.videoUrl(theirs.video_path); } catch { /* ignore */ } }
-      if (mine && !picked) { try { myUrl = await Backend.videoUrl(mine.video_path); } catch { /* ignore */ } }
-    }
-    dropSheetUrls();
-    if (theirUrl) sheetUrls.push(theirUrl);
-    if (myUrl) sheetUrls.push(myUrl);
+  // Synchronous render — NEVER awaits the network, so opening the sheet and
+  // showing a just-recorded clip are instant (the blank/hang came from awaiting
+  // Supabase downloads inside draw on every redraw).
+  const draw = () => {
+    const loadTheirs = backend && !loaded && !theirUrl;
+    const loadYours = backend && !loaded && !picked && !myUrl;
     s.innerHTML = `
       <div class="sheet-card">
         <div class="grab"></div>
         <div class="wz-head"><img src="${avatar(p)}" alt=""><div><div class="wname">${esc(p.name)}, ${p.age}</div><div class="wstep">${esc(t('vm_title'))}</div></div><button class="icon-btn wz-x" id="vm-close">${svgIcon('x')}</button></div>
         <p class="section-sub" style="margin-bottom:14px">${esc(t('vm_sub'))}</p>
         <div class="vm-block"><div class="vm-cap">${esc(t('vm_from', { name: p.name }))}</div>
-          ${theirUrl ? `<video class="vm-video" src="${theirUrl}" controls playsinline></video>` : `<div class="vm-empty">${esc(t('vm_none'))}</div>`}</div>
+          ${theirUrl ? `<video class="vm-video" src="${theirUrl}" controls playsinline preload="metadata"></video>` : `<div class="vm-empty">${esc(loadTheirs ? t('vm_loading') : t('vm_none'))}</div>`}</div>
         <div class="vm-block"><div class="vm-cap">${esc(t('vm_yours'))}</div>
           ${!backend ? `<p class="ve-note">${svgIcon('info')} ${esc(t('vm_need'))}</p>`
             : picked ? `<video class="vm-video" src="${pickedUrl}" controls playsinline></video>
               <div class="vm-acts"><button class="btn btn-ghost btn-sm" id="vm-retake">${svgIcon('shuffle')} ${esc(t('vm_retake'))}</button><button class="btn btn-primary btn-sm" id="vm-send">${svgIcon('check')} ${esc(t('vm_send'))}</button></div>`
-            : myUrl ? `<video class="vm-video" src="${myUrl}" controls playsinline></video>
+            : myUrl ? `<video class="vm-video" src="${myUrl}" controls playsinline preload="metadata"></video>
               <div class="vm-acts"><button class="btn btn-ghost btn-sm" id="vm-del">${svgIcon('x')} ${esc(t('vm_delete'))}</button></div>
               <p class="ve-note">${svgIcon('info')} ${esc(t('vm_one'))}</p>`
+            : loadYours ? `<div class="vm-empty">${esc(t('vm_loading'))}</div>`
             : `<button class="btn btn-primary" id="vm-rec">${svgIcon('video')} ${esc(t('vm_record'))}</button>`}
         </div>
       </div>`;
@@ -920,25 +921,46 @@ function openVideo(pid) {
     const rec = $('#vm-rec'); if (rec) rec.onclick = () => file.click();
     const rt = $('#vm-retake'); if (rt) rt.onclick = () => file.click();
     const snd = $('#vm-send'); if (snd) snd.onclick = async () => {
-      snd.disabled = true;
-      try { await Backend.sendVideo(pid, picked); picked = null; revoke(); toast(t('vm_sent', { name: p.name })); draw(); }
-      catch (e) { snd.disabled = false; toast((e && (e.message || e)) || 'Ошибка'); }
+      snd.disabled = true; snd.textContent = t('vm_sending') || '…';
+      try {
+        await Backend.sendVideo(pid, picked);
+        picked = null; revoke(); myUrl = null; loaded = false; // reload to show the sent clip
+        toast(t('vm_sent', { name: p.name })); draw(); loadData();
+      } catch (e) { snd.disabled = false; toast((e && (e.message || e)) || 'Ошибка'); }
     };
     const del = $('#vm-del'); if (del) del.onclick = async () => {
       if (!confirm(t('vm_del_confirm'))) return;
-      try { await Backend.deleteVideo(pid); toast(t('vm_deleted')); draw(); }
+      try { await Backend.deleteVideo(pid); myUrl = null; picked = null; revoke(); loaded = true; toast(t('vm_deleted')); draw(); }
       catch (e) { toast((e && (e.message || e)) || 'Ошибка'); }
     };
   };
+
+  // Fetch existing videos once, in the background, with timeouts.
+  const loadData = async () => {
+    if (!backend) { loaded = true; draw(); return; }
+    try {
+      const [mine, theirs] = await Promise.all([
+        withTimeout(Backend.myVideoTo(pid), 8000),
+        withTimeout(Backend.videoFrom(pid), 8000),
+      ]);
+      if (theirs && theirs.video_path) { const u = await withTimeout(Backend.videoUrl(theirs.video_path), 12000); if (u) { theirUrl = u; urls.push(u); } }
+      if (mine && mine.video_path && !picked) { const u = await withTimeout(Backend.videoUrl(mine.video_path), 12000); if (u) { myUrl = u; urls.push(u); } }
+    } catch { /* ignore */ }
+    loaded = true;
+    if (!s.classList.contains('hidden')) draw();
+  };
+
   file.onchange = (e) => {
     const f = e.target.files[0]; e.target.value = '';
     if (!f) return;
     if (f.size > MAX_VIDEO) { toast(t('vm_too_big')); return; }
     picked = f; revoke(); pickedUrl = URL.createObjectURL(f);
-    draw();
+    draw(); // instant local preview — no network
   };
+
   s.classList.remove('hidden');
-  draw();
+  draw();      // instant
+  loadData();  // background fill
 }
 
 /* ---------------- match ---------------- */
