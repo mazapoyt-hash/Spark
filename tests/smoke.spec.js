@@ -81,6 +81,38 @@ test('video sheet opens instantly (no hang)', async ({ page }) => {
   await expect(page.locator('#sheet-video .sheet-card')).toBeVisible({ timeout: 3000 });
 });
 
+test('«Мне нравятся» lists people I liked', async ({ page }) => {
+  await onboard(page);
+  await page.evaluate(() => {
+    const p = DEMO_PEOPLE.find((x) => x.gender === 'w');
+    const d = dyn(p.id); d.iLiked = true; d.likedMe = false; d.declined = false;
+    save(); switchTab('likes');
+  });
+  // the sympathies tab opens on «Мне нравятся» (outgoing) by default
+  await expect(page.locator('#symseg .symtab.on')).toHaveCount(1);
+  await expect(page.locator('#lgrid .lcard')).toHaveCount(1);
+});
+
+test('message thread caps at 10 with a live counter', async ({ page }) => {
+  await onboard(page);
+  await page.evaluate(() => { const p = DEMO_PEOPLE.find((x) => x.gender === 'w'); openNote(p.id); });
+  await expect(page.locator('#sheet-note .note-count')).toContainText('10');
+  await page.fill('#nt-in', 'Привет!');
+  await page.click('#nt-send');
+  await expect(page.locator('#sheet-note .note-count')).toContainText('9');
+});
+
+test('date reschedule form opens with a place field', async ({ page }) => {
+  await onboard(page);
+  await page.evaluate(() => {
+    const p = DEMO_PEOPLE.find((x) => x.gender === 'w');
+    APP_STATE.dates.push({ id: 'dx', personId: p.id, place: 'Kafe', inside: true, dateISO: isoPlusDays(2), time: '19:00', createdAt: Date.now() });
+    save(); switchTab('dates');
+  });
+  await page.click('.dcard .ded');
+  await expect(page.locator('#sheet-edit #de-place')).toBeVisible();
+});
+
 test('admin (demo) login + verification queue + reject needs a comment', async ({ page }) => {
   await onboard(page); // submits a verification into same-origin localStorage
   await page.goto('/adminka6582/');
