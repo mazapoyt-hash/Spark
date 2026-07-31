@@ -16,6 +16,10 @@ module.exports = defineConfig({
     headless: true,
     viewport: { width: 390, height: 844 },
     actionTimeout: 10000,
+    // Block the service worker: once it's active it fetches the Supabase CDN in
+    // its own context, bypassing page.route's abort — which would boot the app
+    // in real mode instead of the deterministic demo path the tests rely on.
+    serviceWorkers: 'block',
     // local runs can point at a pre-installed browser via PW_EXECUTABLE;
     // CI installs its own with `npx playwright install`, so it stays unset there.
     ...(process.env.PW_EXECUTABLE ? { launchOptions: { executablePath: process.env.PW_EXECUTABLE } } : {}),
