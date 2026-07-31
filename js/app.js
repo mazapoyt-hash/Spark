@@ -18,11 +18,11 @@ function defaultState() {
     profile: {
       id: uid(), name: '', age: null, gender: 'm', lookingFor: 'w',
       langs: [], photos: [], verified: false, verifyStatus: 'none', verifyId: null, verifyComment: '',
-      locale: detectLocale(), radiusKm: 10,
+      locale: detectLocale(), radiusKm: 10, showLastSeen: true,
     },
     // dynamic per-person flags
     people: Object.fromEntries(DEMO_PEOPLE.map((p) => [p.id, {
-      online: Math.random() > 0.25, likedMe: false, iLiked: false, declined: false, dateId: null, note: null,
+      online: Math.random() > 0.25, likedMe: false, iLiked: false, declined: false, dateId: null, note: null, notes: [], seenAt: null,
     }])),
     dates: [],
     unseen: { likes: 0, meet: 0 },
@@ -163,16 +163,53 @@ let realLoading = null;
 
 const hashHue = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; };
 const mapRealUser = (u) => ({ id: u.id, name: u.name || '—', age: u.age || '', gender: u.gender || '', langs: u.langs || [], km: (u.km == null ? null : u.km), lat: u.lat, lng: u.lng, hues: [hashHue(u.id), (hashHue(u.id) + 40) % 360], _photos: u.photos || [], _real: true, _bot: !!u.is_bot, _behavior: u.behavior || 'passive' });
-const rst = (id) => { const ps = (APP_STATE.realState && APP_STATE.realState[id]) || {}; return { online: true, likedMe: realLikedMe.has(id), iLiked: realLikes.has(id), declined: realPasses.has(id), dateId: ps.dateId || null, note: ps.note || null }; };
+const rst = (id) => { const ps = (APP_STATE.realState && APP_STATE.realState[id]) || {}; return { online: true, likedMe: realLikedMe.has(id), iLiked: realLikes.has(id), declined: realPasses.has(id), dateId: ps.dateId || null, note: ps.note || null, notes: ps.notes || [], seenAt: null }; };
 /* mutable per-person state (note / dateId). Demo uses APP_STATE.people; real
    users & bots use APP_STATE.realState (they aren't in the demo people map). */
 function pstate(id) {
-  if (REAL_DISCOVERY) { APP_STATE.realState = APP_STATE.realState || {}; return (APP_STATE.realState[id] = APP_STATE.realState[id] || { note: null, dateId: null }); }
+  if (REAL_DISCOVERY) { APP_STATE.realState = APP_STATE.realState || {}; return (APP_STATE.realState[id] = APP_STATE.realState[id] || { note: null, notes: [], dateId: null }); }
   return dyn(id) || {};
 }
 /* read-only display state (online/note/dateId/like flags), demo or real */
 const dstate = (id) => (REAL_DISCOVERY ? rst(id) : dyn(id));
 const person = (id) => (REAL_DISCOVERY ? REAL_BY_ID[id] : DEMO_BY_ID[id]) || { name: '?', age: '', hues: [270, 300], langs: [] };
+
+/* ---- message threads (up to 10 each way, short phrases) ---- */
+const MAX_NOTES = 10;
+function notesOf(id) {
+  const ps = pstate(id);
+  if (!Array.isArray(ps.notes)) ps.notes = [];
+  // migrate the legacy single {mine,theirs} note into the thread
+  if (!ps.notes.length && ps.note && ps.note.mine) {
+    ps.notes.push({ who: 'me', text: ps.note.mine, at: ps.note.at || Date.now() });
+    if (ps.note.theirs) ps.notes.push({ who: 'them', text: ps.note.theirs, at: (ps.note.at || Date.now()) + 1 });
+  }
+  ps.note = null;
+  return ps.notes;
+}
+const myNoteCount = (id) => notesOf(id).filter((m) => m.who === 'me').length;
+const notesLeft = (id) => Math.max(0, MAX_NOTES - myNoteCount(id));
+const hasUnread = (id) => { const n = notesOf(id); return n.length > 0 && n[n.length - 1].who === 'them'; };
+
+/* ---- relative "last seen", gated by the user's own privacy toggle ---- */
+function agoLabel(ts) {
+  const s = (Date.now() - ts) / 1000;
+  if (s < 60) return null; // just now → treat as online
+  if (s < 3600) return t('ago_min', { n: Math.floor(s / 60) });
+  if (s < 86400) return t('ago_hour', { n: Math.floor(s / 3600) });
+  return t('ago_day', { n: Math.floor(s / 86400) });
+}
+/** If the user hides their own presence, last-seen is hidden for both sides. */
+function lastSeenLabel(id) {
+  if (!APP_STATE.profile.showLastSeen) return '';
+  const d = dstate(id);
+  if (d.online) return t('seen_online');
+  const dd = dyn(id);
+  let at = (dd && dd.seenAt) || d.seenAt;
+  if (!at && dd) { at = Date.now() - rnd(3 * 60000, 8 * 3600000); dd.seenAt = at; save(); } // stable, persisted
+  const a = at ? agoLabel(at) : null;
+  return a ? t('seen_ago', { ago: a }) : t('seen_online');
+}
 
 async function loadRealDiscovery() {
   if (!(window.Backend && Backend.enabled)) { REAL_DISCOVERY = false; return false; }
@@ -212,6 +249,12 @@ const deckList = () => (REAL_DISCOVERY
 const likesList = () => (REAL_DISCOVERY
   ? REAL_PEOPLE.filter((p) => { const d = rst(p.id); return d.likedMe && !d.iLiked && !d.declined; })
   : DEMO_PEOPLE.filter((p) => { const d = dyn(p.id); return d.likedMe && !d.iLiked && !d.declined && d.online; })
+).sort((a, b) => (a.km == null ? 1e9 : a.km) - (b.km == null ? 1e9 : b.km));
+
+// people I liked who haven't liked back yet (outgoing, pending) — the «Мне нравятся» list
+const iLikedList = () => (REAL_DISCOVERY
+  ? REAL_PEOPLE.filter((p) => { const d = rst(p.id); return d.iLiked && !d.likedMe && !d.declined; })
+  : DEMO_PEOPLE.filter((p) => { const d = dyn(p.id); return d.iLiked && !d.likedMe && !d.declined; })
 ).sort((a, b) => (a.km == null ? 1e9 : a.km) - (b.km == null ? 1e9 : b.km));
 
 const matchList = () => (REAL_DISCOVERY
@@ -276,7 +319,7 @@ function requestDiscoveryGeo() {
 function renderCurrentView() {
   renderHeader();
   if (currentTab === 'discover') renderDiscover();
-  if (currentTab === 'likes') renderLikes();
+  if (currentTab === 'likes') renderSympathy();
   if (currentTab === 'meet') renderMeet();
   if (currentTab === 'dates') renderDates();
 }
@@ -592,6 +635,51 @@ async function fetchPlaces(center) {
   return result;
 }
 
+/* ---- live place autocomplete (keyless OSM Nominatim) ----
+   As the user types a meeting place, suggest real venues near them — like a
+   browser search box. Picking one records its real coordinates so the map and
+   travel-time estimate work for a freely-typed place too. */
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+async function searchPlaces(query) {
+  const q = (query || '').trim();
+  if (q.length < 3) return [];
+  const loc = myLoc();
+  let url = `${NOMINATIM_URL}?format=jsonv2&limit=6&addressdetails=0&accept-language=${encodeURIComponent(APP_STATE.profile.locale || 'en')}&q=${encodeURIComponent(q)}`;
+  if (loc) { const d = 0.15; url += `&viewbox=${loc.lng - d},${loc.lat - d},${loc.lng + d},${loc.lat + d}`; } // ~15km bias
+  const r = await fetchT(url, 6000);
+  if (!r.ok) return [];
+  const data = await r.json();
+  return (data || []).map((x) => {
+    const name = (x.name && x.name.trim()) || String(x.display_name || '').split(',')[0].trim();
+    const lat = parseFloat(x.lat), lng = parseFloat(x.lon);
+    if (name && Number.isFinite(lat) && Number.isFinite(lng)) REAL_PLACE_GEO[name] = { lat, lng };
+    return { name, label: x.display_name || name };
+  }).filter((x) => x.name);
+}
+
+/* attach a debounced suggestion dropdown to a place <input>. Reused by the
+   wizard and the date-reschedule form. */
+function bindPlaceAutocomplete(input, box, onPick) {
+  let timer = null, token = 0;
+  const hide = () => { box.hidden = true; box.innerHTML = ''; };
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 3) { hide(); return; }
+    timer = setTimeout(async () => {
+      const mine = ++token;
+      let results = [];
+      try { results = await searchPlaces(q); } catch { results = []; }
+      if (mine !== token || !document.body.contains(input)) return; // stale / closed
+      if (!results.length) { hide(); return; }
+      box.innerHTML = results.map((r) => `<button type="button" class="acitem" data-name="${esc(r.name)}"><b>${esc(r.name)}</b><span>${esc(r.label)}</span></button>`).join('');
+      box.hidden = false;
+      $$('.acitem', box).forEach((b) => { b.onmousedown = (e) => { e.preventDefault(); }; b.onclick = () => { onPick(b.dataset.name); hide(); }; });
+    }, 320);
+  });
+  input.addEventListener('blur', () => setTimeout(hide, 180)); // let a click land first
+}
+
 /* the place pool for the wizard — real POIs when available, else demo ideas */
 function placePool(inside) {
   const real = REAL_PLACES && (inside ? REAL_PLACES.inside : REAL_PLACES.outside);
@@ -788,90 +876,119 @@ function notePresets() {
   const loc = APP_STATE.profile.locale;
   return (I18N[loc] && I18N[loc].note_presets) || I18N.en.note_presets;
 }
-function openNote(pid) {
-  const p = person(pid);
-  const d = pstate(pid);
+/* Reusable message sheet: a short thread capped at MAX_NOTES of MY lines, with
+   a live «осталось N/10» counter. `notes` is a live array ref; `persist` saves
+   it; the partner sends one canned reply after each of my lines (demo). */
+function openMsgSheet({ partner, notes, replyText, persist, onChange }) {
   const s = $('#sheet-note');
+  const pa = avatar(partner);
   const draw = () => {
-    const n = d.note;
+    const left = Math.max(0, MAX_NOTES - notes.filter((m) => m.who === 'me').length);
+    const atLimit = left <= 0;
     s.innerHTML = `
       <div class="sheet-card">
         <div class="grab"></div>
         <div class="wz-head">
-          <img src="${avatar(p)}" alt="">
-          <div><div class="wname">${esc(p.name)}, ${p.age}</div><div class="wstep">${esc(t('note_title'))}</div></div>
+          <img src="${pa}" alt="">
+          <div><div class="wname">${esc(partner.name)}, ${partner.age}</div><div class="wstep">${esc(t('note_title'))}</div></div>
           <button class="icon-btn wz-x" id="nt-close">${svgIcon('x')}</button>
         </div>
-        <p class="section-sub" style="margin-bottom:14px">${esc(t('note_sub'))}</p>
-        ${n && n.mine ? `<div class="note-log">
-            <div class="pb me"><img src="${myAvatar()}" alt=""><div class="bub">${esc(n.mine)}</div></div>
-            ${n.theirs ? `<div class="pb"><img src="${avatar(p)}" alt=""><div class="bub ok">${esc(n.theirs)}</div></div>` : '<div class="pb"><img src="' + avatar(p) + '" alt=""><div class="bub"><span class="tdots"><i></i><i></i><i></i></span></div></div>'}
-          </div>` : ''}
+        <p class="section-sub" style="margin-bottom:10px">${esc(t('note_sub'))}</p>
+        ${notes.length ? `<div class="note-log" id="nt-log">${notes.map((m) => m.who === 'me'
+          ? `<div class="pb me"><img src="${myAvatar()}" alt=""><div class="bub">${esc(m.text)}</div></div>`
+          : `<div class="pb"><img src="${pa}" alt=""><div class="bub ok">${esc(m.text)}</div></div>`).join('')}</div>` : ''}
         <div class="note-presets">${notePresets().map((x) => `<button class="chip npreset">${esc(x)}</button>`).join('')}</div>
         <div class="note-in">
-          <input class="input" id="nt-in" maxlength="120" placeholder="${esc(t('note_ph', { name: p.name }))}">
-          <button class="btn btn-primary btn-sm" id="nt-send">${esc(n && n.mine ? t('note_edit') : t('note_send'))}</button>
+          <input class="input" id="nt-in" maxlength="120" placeholder="${esc(t('note_ph', { name: partner.name }))}" ${atLimit ? 'disabled' : ''}>
+          <button class="btn btn-primary btn-sm" id="nt-send" ${atLimit ? 'disabled' : ''}>${svgIcon('check')}</button>
         </div>
+        <div class="note-count ${left <= 3 ? 'low' : ''}">${esc(atLimit ? t('note_limit') : t('note_left', { n: left }))}</div>
       </div>`;
     $('#nt-close').onclick = () => s.classList.add('hidden');
     s.onclick = (e) => { if (e.target === s) s.classList.add('hidden'); };
-    $$('.npreset', s).forEach((b) => { b.onclick = () => { $('#nt-in').value = b.textContent; $('#nt-in').focus(); }; });
-    $('#nt-send').onclick = () => {
-      const val = $('#nt-in').value.trim();
-      if (!val) return;
-      const firstTime = !(d.note && d.note.mine);
-      d.note = { mine: val, theirs: null, at: Date.now() };
-      save();
-      draw();
-      toast(t('note_sent', { name: p.name }), avatar(p));
-      if (currentTab === 'meet') renderMeet();
-      if (firstTime) setTimeout(() => {
-        if (pstate(pid).note && !pstate(pid).note.theirs) {
-          pstate(pid).note.theirs = t('note_reply');
-          save();
-          if (!$('#sheet-note').classList.contains('hidden')) draw();
-          if (currentTab === 'meet') renderMeet();
+    const log = $('#nt-log'); if (log) log.scrollTop = log.scrollHeight;
+    $$('.npreset', s).forEach((b) => { b.onclick = () => { const i = $('#nt-in'); if (i && !i.disabled) { i.value = b.textContent; i.focus(); } }; });
+    const send = () => {
+      const i = $('#nt-in'); if (!i || i.disabled) return;
+      const val = i.value.trim();
+      if (!val || left <= 0) return;
+      notes.push({ who: 'me', text: val, at: Date.now() });
+      persist(); draw();
+      toast(t('note_sent', { name: partner.name }), pa);
+      if (onChange) onChange();
+      setTimeout(() => {
+        if (notes.length && notes[notes.length - 1].who === 'me') {
+          notes.push({ who: 'them', text: replyText(), at: Date.now() });
+          persist();
+          if (!s.classList.contains('hidden')) draw();
+          if (onChange) onChange();
         }
-      }, rnd(2500, 5000));
+      }, rnd(2000, 4500));
     };
+    const sb = $('#nt-send'); if (sb) sb.onclick = send;
+    if ($('#nt-in')) $('#nt-in').onkeydown = (e) => { if (e.key === 'Enter') send(); };
   };
   s.classList.remove('hidden');
   draw();
 }
 
-/* ---------------- likes ---------------- */
-function renderLikes() {
+function openNote(pid) {
+  openMsgSheet({
+    partner: person(pid),
+    notes: notesOf(pid),
+    replyText: () => t('note_reply'),
+    persist: save,
+    onChange: () => { if (currentTab === 'meet') renderMeet(); },
+  });
+}
+
+/* ---------------- sympathies: «Мне нравятся» (I liked) + «Я нравлюсь» (liked me) ---------------- */
+let sympTab = 'ilike';
+function renderSympathy() {
+  const seg = $('#symseg');
+  const nIL = iLikedList().length, nLM = likesList().length;
+  seg.innerHTML = `
+    <button class="symtab ${sympTab === 'ilike' ? 'on' : ''}" data-s="ilike">${esc(t('sym_ilike'))}${nIL ? ` <b>${nIL}</b>` : ''}</button>
+    <button class="symtab ${sympTab === 'likesme' ? 'on' : ''}" data-s="likesme">${esc(t('sym_likesme'))}${nLM ? ` <b>${nLM}</b>` : ''}</button>`;
+  $$('.symtab', seg).forEach((b) => { b.onclick = () => { sympTab = b.dataset.s; renderSympathy(); }; });
+
   const grid = $('#lgrid');
-  const list = likesList();
-  $('#likes-free').textContent = t('l_free');
+  const outgoing = sympTab === 'ilike';
+  const list = outgoing ? iLikedList() : likesList();
   if (!list.length) {
     grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="eico">${svgIcon('sparkle')}</div>
-      <h3>${esc(t('l_empty_title'))}</h3><p>${esc(t('l_empty_sub'))}</p></div>`;
+      <h3>${esc(outgoing ? t('sym_ilike_empty_title') : t('l_empty_title'))}</h3>
+      <p>${esc(outgoing ? t('sym_ilike_empty_sub') : t('l_empty_sub'))}</p></div>`;
     return;
   }
-  grid.innerHTML = list.map((p) => `
+  grid.innerHTML = list.map((p) => {
+    const seen = lastSeenLabel(p.id);
+    return `
     <div class="lcard" data-id="${p.id}">
       <img class="limg" src="${avatar(p)}" alt="${esc(p.name)}">
       <span class="lheart">${svgIcon('heart')}</span>
       <div class="lbody">
         <div class="lname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:16px;height:16px;font-size:9px">${svgIcon('check')}</span></div>
-        <div class="lsub">${esc(distLabel(p))}${p.langs && p.langs.length ? ' · ' + esc(langList(p.langs)) : ''}</div>
+        <div class="lsub">${esc(distLabel(p))}${seen ? ' · ' + esc(seen) : ''}</div>
         <div class="lbtns">
           <button class="mini no" title="${esc(t('l_decline'))}">${svgIcon('x')}</button>
-          <button class="mini yes" title="${esc(t('l_like_back'))}">${svgIcon('heart')}</button>
+          ${outgoing ? '' : `<button class="mini yes" title="${esc(t('l_like_back'))}">${svgIcon('heart')}</button>`}
         </div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   $$('.lcard', grid).forEach((card) => {
     const id = card.dataset.id;
-    $('.yes', card).onclick = (e) => {
+    $('.limg', card).onclick = () => openProfileSheet(id);
+    const yes = $('.yes', card);
+    if (yes) yes.onclick = (e) => {
       heartBurst(e.clientX, e.clientY);
       if (REAL_DISCOVERY) { realLikes.add(id); Backend.like(id).catch(() => {}); } else { dyn(id).iLiked = true; }
-      save(); onMutualLike(id, true); renderLikes();
+      save(); onMutualLike(id, true); renderSympathy();
     };
     $('.no', card).onclick = () => {
       if (REAL_DISCOVERY) { realPasses.add(id); APP_STATE.realPasses = [...realPasses]; } else { dyn(id).declined = true; }
-      save(); renderLikes(); renderHeader();
+      save(); renderSympathy(); renderHeader();
     };
   });
 }
@@ -1010,14 +1127,14 @@ function renderMeet() {
   wrap.innerHTML = list.map((p) => {
     const d = dstate(p.id);
     const off = !d.online;
-    const sent = d.note && d.note.mine;
-    const unread = d.note && d.note.theirs;
+    const sent = myNoteCount(p.id) > 0;
+    const unread = hasUnread(p.id);
     return `
     <div class="mrow ${off ? 'offline' : ''}" data-id="${p.id}">
       <img class="mimg" src="${avatar(p)}" alt="">
       <div class="mtxt">
         <div class="mname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:16px;height:16px;font-size:9px">${svgIcon('check')}</span></div>
-        <div class="msub">${off ? esc(t('meet_offline')) : `<i class="dot"></i> ${esc(t('d_online'))}${kmStr(p) ? ' · ' + esc(t('d_km', { km: kmStr(p) })) : ''}`}</div>
+        <div class="msub">${off ? esc(lastSeenLabel(p.id) || t('meet_offline')) : `<i class="dot"></i> ${esc(t('d_online'))}${kmStr(p) ? ' · ' + esc(t('d_km', { km: kmStr(p) })) : ''}`}</div>
       </div>
       ${off ? '' : `<div class="macts">
         <button class="mbtn vid" aria-label="${esc(t('vm_open'))}">${svgIcon('video')}</button>
@@ -1090,14 +1207,17 @@ function wzInput(placeholder, suggestions) {
     const zone = wzZone();
     zone.innerHTML = `
       <div class="wz-inline">
-        <input class="input" id="wz-in" maxlength="40" placeholder="${esc(placeholder)}">
+        <input class="input" id="wz-in" maxlength="60" placeholder="${esc(placeholder)}" autocomplete="off">
         <button class="btn btn-primary btn-sm" id="wz-send">${esc(t('w_q3_send'))}</button>
       </div>
+      <div class="acbox" id="wz-ac" hidden></div>
       <div class="wz-sugg">${suggestions.map((sname) => `<span class="chip pchip" data-pick="${esc(sname)}">${esc(sname)}<span class="pmap" data-map="${esc(sname)}">${svgIcon('pin')}</span></span>`).join('')}</div>`;
+    const inp = $('#wz-in');
     const done = (v) => { if (!v.trim()) return; zone.innerHTML = ''; res(v.trim()); };
-    $('#wz-send').onclick = () => done($('#wz-in').value);
-    $('#wz-in').onkeydown = (e) => { if (e.key === 'Enter') done($('#wz-in').value); };
+    $('#wz-send').onclick = () => done(inp.value);
+    inp.onkeydown = (e) => { if (e.key === 'Enter') done(inp.value); };
     $$('.pchip', zone).forEach((c) => { c.onclick = (e) => { if (e.target.closest('[data-map]')) return; done(c.dataset.pick); }; });
+    bindPlaceAutocomplete(inp, $('#wz-ac'), (name) => { inp.value = name; inp.focus(); });
   });
 }
 
@@ -1286,7 +1406,7 @@ async function partnerConfirm(w, name, pAccept, counterValue, applyCounter, mapN
   if (Math.random() < pAccept) { partnerSays(t('w_they_yes', { name }), 'ok'); await sleep(700); wzGuard(w); return; }
   partnerSays(t('w_they_no', { name }), 'nope');
   await partnerThinks(w, rnd(700, 1300));
-  partnerSays(t('w_counter', { name, v: counterValue }));
+  partnerSays(t('w_counter', { name, v: counterValue }), mapName ? 'propose' : '');
   const ok = await askYesNo(mapName); wzGuard(w);
   if (ok) { meSays(t('w_yes')); applyCounter(); }
   else { meSays(t('w_no')); await partnerThinks(w, rnd(600, 1100)); partnerSays(t('w_they_yes', { name }), 'ok'); }
@@ -1341,7 +1461,7 @@ async function wizardIChoose(w, name) {
 async function theyPropose(w, name, values, applyValue, myPickFallback, mapable) {
   for (let i = 0; i < values.length; i++) {
     await partnerThinks(w);
-    partnerSays(t('w_counter', { name, v: values[i] }));
+    partnerSays(t('w_counter', { name, v: values[i] }), mapable ? 'propose' : '');
     const ok = await askYesNo(mapable ? values[i] : null); wzGuard(w);
     if (ok) { meSays(t('w_yes')); applyValue(values[i], i); await sleep(500); wzGuard(w); return; }
     meSays(t('w_no'));
@@ -1465,16 +1585,32 @@ function renderDates() {
 
   const card = (d, isPast) => {
     const p = person(d.personId);
+    const pend = d.pending;
+    const msgs = d.msgs || [];
+    const unread = msgs.length && msgs[msgs.length - 1].who === 'them';
     return `
-      <div class="dcard ${isPast ? 'past' : ''}" data-id="${d.id}">
-        <img class="dimg" src="${avatar(p)}" alt="">
-        <div class="dtxt">
-          <div class="dname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:17px;height:17px;font-size:10px">${svgIcon('check')}</span></div>
-          <div class="dline"><span class="klabel">${esc(t('lbl_where'))}</span><span>${placeTag(d.place)} · ${esc(t(d.inside ? 'dt_place_in' : 'dt_place_out'))}</span></div>
-          <div class="dline"><span class="klabel">${esc(t('lbl_day'))}</span><span>${esc(fmtDate(d.dateISO))} · <b>${esc(d.time)}</b></span></div>
-          ${!isPast && dateWhenLabel(d) ? `<span class="dwhen">${esc(dateWhenLabel(d))}</span>` : ''}
+      <div class="dcard ${isPast ? 'past' : ''} ${pend ? 'pending' : ''}" data-id="${d.id}">
+        <div class="drow">
+          <img class="dimg" src="${avatar(p)}" alt="">
+          <div class="dtxt">
+            <div class="dname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:17px;height:17px;font-size:10px">${svgIcon('check')}</span></div>
+            <div class="dline"><span class="klabel">${esc(t('lbl_where'))}</span><span>${placeTag(d.place)} · ${esc(t(d.inside ? 'dt_place_in' : 'dt_place_out'))}</span></div>
+            <div class="dline"><span class="klabel">${esc(t('lbl_day'))}</span><span>${esc(fmtDate(d.dateISO))} · <b>${esc(d.time)}</b></span></div>
+            ${!isPast && dateWhenLabel(d) ? `<span class="dwhen">${esc(dateWhenLabel(d))}</span>` : ''}
+          </div>
+          ${isPast ? '' : `<button class="dx" title="${esc(t('dt_cancel'))}">${svgIcon('x')}</button>`}
         </div>
-        ${isPast ? '' : `<button class="dx" title="${esc(t('dt_cancel'))}">${svgIcon('x')}</button>`}
+        ${pend ? `<div class="dpend ${pend.by === 'them' ? 'in' : 'out'}">
+          <div class="dpend-t">${esc(pend.by === 'them' ? t('dt_pending_in', { name: p.name }) : t('dt_pending_out', { name: p.name }))}</div>
+          <div class="dpend-v">${esc(fmtDate(pend.dateISO))} · <b>${esc(pend.time)}</b> · ${esc(pend.place)}</div>
+          ${pend.by === 'them' ? `<div class="dpend-acts">
+            <button class="btn btn-ghost btn-sm dpj">${esc(t('dt_reject'))}</button>
+            <button class="btn btn-primary btn-sm dpa">${esc(t('dt_accept'))}</button></div>` : ''}
+        </div>` : ''}
+        ${(isPast || (pend && pend.by === 'me')) ? '' : `<div class="dacts">
+          ${pend ? '' : `<button class="btn btn-ghost btn-sm ded">${svgIcon('shuffle')} ${esc(t('dt_edit'))}</button>`}
+          <button class="btn btn-ghost btn-sm dmsg">${svgIcon('envelope')} ${esc(t('dt_msg'))}${unread ? '<i class="ndot"></i>' : ''}</button>
+        </div>`}
       </div>`;
   };
 
@@ -1482,19 +1618,112 @@ function renderDates() {
     (upcoming.length ? `<div class="dgroup"><h3>${esc(t('dt_upcoming'))}</h3>${upcoming.map((d) => card(d, false)).join('')}</div>` : '') +
     (past.length ? `<div class="dgroup"><h3>${esc(t('dt_past'))}</h3>${past.map((d) => card(d, true)).join('')}</div>` : '');
 
+  const dateOf = (el) => APP_STATE.dates.find((x) => x.id === el.closest('.dcard').dataset.id);
   $$('.dcard .dx', wrap).forEach((b) => {
     b.onclick = () => {
-      const id = b.closest('.dcard').dataset.id;
-      const d = APP_STATE.dates.find((x) => x.id === id);
-      if (!d) return;
+      const d = dateOf(b); if (!d) return;
       const p = person(d.personId);
-      APP_STATE.dates = APP_STATE.dates.filter((x) => x.id !== id);
-      if (pstate(d.personId).dateId === id) pstate(d.personId).dateId = null;
+      APP_STATE.dates = APP_STATE.dates.filter((x) => x.id !== d.id);
+      if (pstate(d.personId).dateId === d.id) pstate(d.personId).dateId = null;
       save();
       toast(t('dt_canceled', { name: p.name }), avatar(p));
       renderDates();
     };
   });
+  $$('.dcard .ded', wrap).forEach((b) => { b.onclick = () => { const d = dateOf(b); if (d) openDateEdit(d.id); }; });
+  $$('.dcard .dmsg', wrap).forEach((b) => { b.onclick = () => { const d = dateOf(b); if (d) openDateChat(d.id); }; });
+  $$('.dcard .dpa', wrap).forEach((b) => { b.onclick = () => { const d = dateOf(b); if (d && d.pending) { applyPending(d, d.pending); save(); toast(t('dt_change_ok'), avatar(person(d.personId))); renderDates(); } }; });
+  $$('.dcard .dpj', wrap).forEach((b) => { b.onclick = () => { const d = dateOf(b); if (d) { d.pending = null; save(); toast(t('dt_change_no'), avatar(person(d.personId))); renderDates(); } }; });
+}
+
+/* apply an agreed reschedule to the date and clear the pending request */
+function applyPending(d, pend) {
+  d.dateISO = pend.dateISO; d.time = pend.time; d.place = pend.place; d.inside = pend.inside;
+  const pg = placeGeo(pend.place);
+  d.placeLat = pg ? pg.lat : null; d.placeLng = pg ? pg.lng : null;
+  d.pending = null;
+}
+
+/* per-date message thread (separate 10-message allowance, e.g. to reschedule) */
+function openDateChat(dateId) {
+  const d = APP_STATE.dates.find((x) => x.id === dateId); if (!d) return;
+  if (!Array.isArray(d.msgs)) d.msgs = [];
+  openMsgSheet({
+    partner: person(d.personId),
+    notes: d.msgs,
+    replyText: () => t('note_reply'),
+    persist: save,
+    onChange: () => { if (currentTab === 'dates') renderDates(); },
+  });
+}
+
+/* propose a reschedule; the other side confirms (yes/no) — demo-simulated */
+function openDateEdit(dateId) {
+  const d = APP_STATE.dates.find((x) => x.id === dateId); if (!d) return;
+  const p = person(d.personId);
+  const s = $('#sheet-edit');
+  s.innerHTML = `
+    <div class="sheet-card">
+      <div class="grab"></div>
+      <div class="wz-head">
+        <img src="${avatar(p)}" alt="">
+        <div><div class="wname">${esc(p.name)}, ${p.age}</div><div class="wstep">${esc(t('dt_edit_title'))}</div></div>
+        <button class="icon-btn wz-x" id="de-close">${svgIcon('x')}</button>
+      </div>
+      <label class="de-lbl">${esc(t('lbl_where'))}</label>
+      <input class="input" id="de-place" maxlength="60" autocomplete="off" value="${esc(d.place)}">
+      <div class="acbox" id="de-ac" hidden></div>
+      <div class="de-seg">
+        <button class="de-opt ${d.inside ? 'on' : ''}" data-in="1">${esc(t('dt_place_in'))}</button>
+        <button class="de-opt ${d.inside ? '' : 'on'}" data-in="0">${esc(t('dt_place_out'))}</button>
+      </div>
+      <div class="de-2col">
+        <div><label class="de-lbl">${esc(t('lbl_day'))}</label>
+          <input class="input" type="date" id="de-date" min="${isoPlusDays(0)}" value="${esc(d.dateISO)}"></div>
+        <div><label class="de-lbl">${esc(t('w_q5'))}</label>
+          <input class="input" type="time" id="de-time" value="${esc(d.time)}"></div>
+      </div>
+      <button class="btn btn-primary" id="de-send" style="width:100%;margin-top:16px">${esc(t('dt_edit_send'))}</button>
+    </div>`;
+  s.classList.remove('hidden');
+  let inside = d.inside;
+  $('#de-close').onclick = () => s.classList.add('hidden');
+  s.onclick = (e) => { if (e.target === s) s.classList.add('hidden'); };
+  $$('.de-opt', s).forEach((b) => { b.onclick = () => { inside = b.dataset.in === '1'; $$('.de-opt', s).forEach((x) => x.classList.toggle('on', x === b)); }; });
+  bindPlaceAutocomplete($('#de-place', s), $('#de-ac', s), (name) => { $('#de-place', s).value = name; });
+  $('#de-send').onclick = () => {
+    const place = $('#de-place', s).value.trim();
+    const dateISO = $('#de-date', s).value;
+    const time = $('#de-time', s).value;
+    if (!place || !dateISO || !time) return;
+    d.pending = { by: 'me', place, inside, dateISO, time };
+    save();
+    s.classList.add('hidden');
+    toast(t('dt_req_sent', { name: p.name }), avatar(p));
+    renderDates();
+    simulatePartnerReschedule(dateId);
+  };
+}
+
+/* the matched partner answers a reschedule request: accept, or counter-propose */
+function simulatePartnerReschedule(dateId) {
+  setTimeout(() => {
+    const d = APP_STATE.dates.find((x) => x.id === dateId);
+    if (!d || !d.pending || d.pending.by !== 'me') return;
+    const p = person(d.personId);
+    const base = d.pending;
+    if (Math.random() < 0.6) {                       // they accept as-is
+      applyPending(d, base); save();
+      toast(t('dt_change_ok'), avatar(p));
+    } else {                                          // they counter with another time
+      const pool = futureTimes(base.dateISO).filter((x) => x !== base.time);
+      const time = pool.length ? pickOf(pool) : base.time;
+      d.pending = { by: 'them', place: base.place, inside: base.inside, dateISO: base.dateISO, time };
+      save();
+      toast(t('dt_pending_in', { name: p.name }), avatar(p));
+    }
+    if (currentTab === 'dates') renderDates();
+  }, rnd(3000, 6000));
 }
 
 /* ---------------- settings ---------------- */
@@ -1544,6 +1773,11 @@ function openSettings() {
         </div>
       </div>
 
+      <div class="srow-btn" style="flex-wrap:wrap">${esc(t('set_lastseen'))}
+        <label class="switch" style="margin-left:auto"><input type="checkbox" id="st-lastseen" ${pr.showLastSeen ? 'checked' : ''}><span class="track"></span></label>
+        <div class="srow-hint">${esc(t('set_lastseen_hint'))}</div>
+      </div>
+
       ${isStandalone()
         ? `<div class="srow-btn">${esc(t('s_installed'))}</div>`
         : `<button class="srow-btn" id="st-install">${esc(t('s_install'))}
@@ -1571,6 +1805,8 @@ function openSettings() {
   const rr = $('#st-radius');
   rr.oninput = () => { $('#st-radius-val').textContent = rr.value + ' km'; };
   rr.onchange = () => { APP_STATE.profile.radiusKm = +rr.value; save(); renderCurrentView(); };
+  const ls = $('#st-lastseen');
+  if (ls) ls.onchange = (e) => { APP_STATE.profile.showLastSeen = e.target.checked; save(); if (currentTab !== 'discover') renderCurrentView(); };
   const inst = $('#st-install');
   if (inst) inst.onclick = async () => {
     if (deferredInstall) { deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; openSettings(); }
@@ -1890,6 +2126,7 @@ function startSimulation() {
     const d = dyn(p.id);
     if (d.dateId || (wiz && wiz.alive && wiz.pid === p.id)) return;
     d.online = !d.online;
+    if (!d.online) d.seenAt = Date.now(); // remember when they dropped off
     save();
     if (!document.hidden) { renderHeader(); if (currentTab !== 'dates') renderCurrentView(); }
   }, 26000);
@@ -1910,7 +2147,7 @@ function startSimulation() {
         save();
         toast(t('l_toast', { name: p.name }), avatar(p));
         renderBadges();
-        if (currentTab === 'likes') renderLikes();
+        if (currentTab === 'likes') renderSympathy();
         renderHeader();
       }
       nextLike();

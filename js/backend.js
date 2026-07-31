@@ -249,6 +249,28 @@
       if (up.error) throw up.error;
       return client.storage.from('photos').getPublicUrl(path).data.publicUrl;
     },
+
+    /* ---- client error monitoring (see js/errlog.js) ---- */
+    async logErrors(rows) {
+      if (!client || !rows || !rows.length) return;
+      let uid = null;
+      try { const { data } = await client.auth.getUser(); uid = data && data.user ? data.user.id : null; } catch { /* anon */ }
+      const payload = rows.map((r) => ({
+        user_id: uid,
+        message: r.message,
+        stack: r.stack,
+        url: r.url,
+        ua: r.ua,
+      }));
+      const { error } = await client.from('client_errors').insert(payload);
+      if (error) throw error;
+    },
+    async listClientErrors(limit) {
+      const { data, error } = await client.from('client_errors')
+        .select('*').order('created_at', { ascending: false }).limit(limit || 200);
+      if (error) throw error;
+      return data || [];
+    },
   };
 
   window.Backend = Backend;

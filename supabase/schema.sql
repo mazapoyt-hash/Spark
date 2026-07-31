@@ -269,3 +269,63 @@ create policy "bots admin write" on public.bots
 
 -- allow likes to target a bot (not only auth users)
 alter table public.likes drop constraint if exists likes_target_id_fkey;
+
+-- ---------- client_errors (crash monitoring, see js/errlog.js) ----------
+-- Uncaught errors from real devices land here so admins can see production
+-- crashes instead of relying on screenshots. Anyone (incl. anon) may INSERT
+-- their own reports; only admins may read them.
+create table if not exists public.client_errors (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid references auth.users(id) on delete set null,
+  message    text,
+  stack      text,
+  url        text,
+  ua         text,
+  created_at timestamptz not null default now()
+);
+alter table public.client_errors enable row level security;
+drop policy if exists "client_errors insert any" on public.client_errors;
+create policy "client_errors insert any" on public.client_errors
+  for insert with check (true);
+drop policy if exists "client_errors read admin" on public.client_errors;
+create policy "client_errors read admin" on public.client_errors
+  for select using (public.is_admin());
+drop policy if exists "client_errors delete admin" on public.client_errors;
+create policy "client_errors delete admin" on public.client_errors
+  for delete using (public.is_admin());
+create index if not exists client_errors_created_idx on public.client_errors (created_at desc);
+
+-- ---------- data validation (defence in depth at the DB layer) ----------
+-- The client already validates, but bad/legacy writes shouldn't reach the DB.
+-- Added NOT VALID so existing rows are never rescanned/rejected — only new and
+-- updated rows are checked. Each guard is idempotent.
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'profiles_age_chk') then
+    alter table public.profiles add constraint profiles_age_chk
+      check (age is null or (age between 18 and 120)) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'profiles_name_len_chk') then
+    alter table public.profiles add constraint profiles_name_len_chk
+      check (name is null or char_length(name) <= 120) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'profiles_gender_chk') then
+    alter table public.profiles add constraint profiles_gender_chk
+      check (gender is null or gender in ('m','w')) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'bots_age_chk') then
+    alter table public.bots add constraint bots_age_chk
+      check (age is null or (age between 18 and 120)) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'bots_gender_chk') then
+    alter table public.bots add constraint bots_gender_chk
+      check (gender is null or gender in ('m','w')) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'bots_behavior_chk') then
+    alter table public.bots add constraint bots_behavior_chk
+      check (behavior in ('passive','autolike')) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'verifications_status_chk') then
+    alter table public.verifications add constraint verifications_status_chk
+      check (status in ('pending','approved','rejected')) not valid;
+  end if;
+end $$;

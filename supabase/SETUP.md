@@ -10,11 +10,22 @@ Project: `https://tuhzhghwsontzmseatgj.supabase.co`
 Dashboard → **SQL Editor** → **New query** → paste all of
 [`schema.sql`](./schema.sql) → **Run**.
 This creates `profiles` (incl. location + photo URLs), `verifications`,
-`likes`, `dates`, `admins`, the `is_admin()` function, the private
-**`selfies`** bucket, the public **`photos`** bucket (profile pictures shown
-to other users), and all Row-Level-Security policies. The script is
-**idempotent — re-run it whenever `schema.sql` changes** (e.g. after pulling an
-update that adds a table or column).
+`likes`, `dates`, `admins`, `client_errors` (crash monitoring), the
+`is_admin()` function, the private **`selfies`** bucket, the public
+**`photos`** bucket (profile pictures shown to other users), and all
+Row-Level-Security policies. The script is **idempotent — re-run it whenever
+`schema.sql` changes** (e.g. after pulling an update that adds a table or
+column).
+
+Already have a database from an earlier version? Instead of re-reading the
+whole file you can run just the new incremental changes in
+[`migrations/`](./migrations/) in order — see that folder's README. (Re-running
+`schema.sql` works too and is safe.)
+
+**Crash monitoring**: uncaught errors on real devices are batched and written
+to `client_errors` by [`js/errlog.js`](../js/errlog.js). Anyone (incl. anon)
+may insert their own reports; only admins can read them. To review:
+SQL Editor → `select created_at, message, url, ua from public.client_errors order by created_at desc limit 100;`
 
 **Discovery** shows real nearby users: the app stores each user's location on
 their profile (with permission) and lists others within the search radius,

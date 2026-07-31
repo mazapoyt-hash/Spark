@@ -1,5 +1,5 @@
 /* DATE ME — service worker: offline-first app shell */
-const VERSION = 'dateme-v27';
+const VERSION = 'dateme-v29';
 const SHELL = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const SHELL = [
   './js/data.js',
   './js/supabase-config.js',
   './js/backend.js',
+  './js/errlog.js',
   './js/app.js',
   './manifest.webmanifest',
   './icons/favicon.svg',
