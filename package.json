@@ -1,0 +1,14 @@
+{
+  "name": "date-me",
+  "version": "1.0.0",
+  "description": "DATE ME — orbit-UI dating PWA (static + Supabase).",
+  "private": true,
+  "scripts": {
+    "check:i18n": "node tests/check-i18n.mjs",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

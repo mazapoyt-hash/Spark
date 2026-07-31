@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Syntax check (all JS)
+        run: |
+          for f in js/*.js adminka6582/*.js sw.js tools/*.mjs tests/*.mjs; do
+            echo "checking $f"; node --check "$f";
+          done
+
+      - name: i18n parity
+        run: node tests/check-i18n.mjs
+
+      - name: Install Playwright + browser
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Smoke tests
+        env:
+          CI: 'true'
+        run: npx playwright test
