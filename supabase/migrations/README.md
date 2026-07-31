@@ -35,3 +35,4 @@ you've already applied is a no-op.
 | --- | --- |
 | `0001_baseline.sql` | Pointer to `../schema.sql` — the initial full schema (profiles, verifications, likes, dates, messages, admins, bots, `is_admin()`, `delete_account()`, storage buckets + RLS). |
 | `0002_client_errors.sql` | `client_errors` table for client-side crash monitoring (see `js/errlog.js`): anyone may insert, only admins may read/delete. |
+| `0003_validation.sql` | DB-layer CHECK constraints (age 18–120, name length, gender, bot behavior, verification status). Added `NOT VALID` so existing rows are never rejected — only new/updated writes are checked. |

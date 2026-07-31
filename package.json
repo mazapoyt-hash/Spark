@@ -6,9 +6,11 @@
   "scripts": {
     "check:i18n": "node tests/check-i18n.mjs",
     "test": "playwright test",
-    "test:headed": "playwright test --headed"
+    "test:headed": "playwright test --headed",
+    "test:rls": "node tests/rls.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "^1.48.0"
+    "@playwright/test": "^1.48.0",
+    "@supabase/supabase-js": "^2.45.0"
   }
 }

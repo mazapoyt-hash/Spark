@@ -33,3 +33,14 @@ jobs:
         env:
           CI: 'true'
         run: npx playwright test
+
+      # RLS tests self-skip unless staging secrets are configured on the repo.
+      - name: RLS policy tests (staging)
+        env:
+          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          RLS_A_EMAIL: ${{ secrets.RLS_A_EMAIL }}
+          RLS_A_PASSWORD: ${{ secrets.RLS_A_PASSWORD }}
+          RLS_B_EMAIL: ${{ secrets.RLS_B_EMAIL }}
+          RLS_B_PASSWORD: ${{ secrets.RLS_B_PASSWORD }}
+        run: node tests/rls.mjs
