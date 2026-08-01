@@ -96,6 +96,12 @@
       const { error } = await client.from('likes').upsert({ user_id: user.id, target_id: targetId }, { onConflict: 'user_id,target_id' });
       if (error) throw error;
     },
+    async unlike(targetId) { // undo a like I sent (removes the row so it doesn't come back)
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return;
+      const { error } = await client.from('likes').delete().eq('user_id', user.id).eq('target_id', targetId);
+      if (error) throw error;
+    },
     async myLikes() {
       const { data: { user } } = await client.auth.getUser();
       if (!user) return [];

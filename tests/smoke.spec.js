@@ -125,6 +125,20 @@ test('age filter hides people outside the range', async ({ page }) => {
   expect(after).toBe(0);
 });
 
+test('unlike from «Мне нравятся» returns the person to discovery', async ({ page }) => {
+  await onboard(page);
+  const id = await page.evaluate(() => {
+    const p = DEMO_PEOPLE.find((x) => x.gender === 'w' && x.km <= 10);
+    const d = dyn(p.id); d.iLiked = true; d.likedMe = false; d.declined = false; d.online = true;
+    save(); switchTab('likes'); return p.id;
+  });
+  await expect(page.locator('#lgrid .lcard')).toHaveCount(1);
+  await page.click('#lgrid .lcard .no'); // X = unlike in the outgoing list
+  await expect(page.locator('#lgrid .lcard')).toHaveCount(0);
+  const backInDeck = await page.evaluate((pid) => deckList().some((p) => p.id === pid), id);
+  expect(backInDeck).toBe(true);
+});
+
 test('admin (demo) login + verification queue + reject needs a comment', async ({ page }) => {
   await onboard(page); // submits a verification into same-origin localStorage
   await page.goto('/adminka6582/');

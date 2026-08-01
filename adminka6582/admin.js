@@ -467,11 +467,19 @@ function renderUsersReal() {
     const users = [...byId.values()];
     if (!users.length) { $('#users-panel').innerHTML = '<div class="empty">Пока нет зарегистрированных пользователей</div>'; return; }
     const gsym = (g) => (g === 'w' ? 'Ж' : g === 'm' ? 'М' : '—');
+    const lookSym = (g) => (g === 'w' ? 'Ж' : g === 'm' ? 'М' : g === 'all' ? 'все' : '—');
+    const geoCell = (u) => {
+      if (u.lat == null || u.lng == null) return '<span class="tag off">нет гео</span>';
+      const when = u.geo_updated_at ? fmtTime(Date.parse(u.geo_updated_at)) : '';
+      return `<a href="https://www.google.com/maps?q=${u.lat},${u.lng}" target="_blank" rel="noopener">${u.lat.toFixed(4)}, ${u.lng.toFixed(4)}</a>${when ? `<div class="muted" style="font-size:11px">${when}</div>` : ''}`;
+    };
     $('#users-panel').innerHTML = `
-      <table><thead><tr><th>Имя</th><th>Пол</th><th>Верификация</th><th>Регистрация</th><th></th></tr></thead>
+      <table><thead><tr><th>Имя</th><th>Пол</th><th>Ищет</th><th>Гео</th><th>Верификация</th><th>Регистрация</th><th></th></tr></thead>
       <tbody>${users.map((u) => `<tr>
         <td><div class="cellname"><span class="uava uinit">${esc((u.name || '?').trim().charAt(0).toUpperCase())}</span><div><b>${esc(u.name || '—')}</b>, ${u.age || '—'}${u._noprofile ? ' <span class="tag off">без анкеты</span>' : ''}</div></div></td>
         <td>${gsym(u.gender)}</td>
+        <td>${lookSym(u.looking_for)}</td>
+        <td>${geoCell(u)}</td>
         <td>${vmap[u.id] ? `<span class="tag ${vmap[u.id]}">${stName(vmap[u.id])}</span>` : '<span class="tag off">нет</span>'}</td>
         <td class="muted">${u.created_at ? fmtTime(Date.parse(u.created_at)) : '—'}</td>
         <td class="acts"><button class="btn sm" data-user="${u.id}">Профиль</button></td>

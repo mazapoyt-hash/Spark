@@ -575,7 +575,19 @@ function ensureGeo(cb) {
   navigator.geolocation.getCurrentPosition(
     (pos) => { USER_GEO = { lat: pos.coords.latitude, lng: pos.coords.longitude }; cb(USER_GEO); },
     () => cb(null),
-    { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 },
+    // high accuracy + a short max-age so we get a fresh fix (a stale cached
+    // position from another city would push people out of the search radius)
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+  );
+}
+/* force a fresh fix (ignores the cache) — for the "update my location" button,
+   so someone living between two cities can re-anchor on demand */
+function refreshGeo(cb) {
+  if (!navigator.geolocation) { if (cb) cb(null); return; }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => { USER_GEO = { lat: pos.coords.latitude, lng: pos.coords.longitude }; if (cb) cb(USER_GEO); },
+    () => { if (cb) cb(null); },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
   );
 }
 const myLoc = () => USER_GEO || MY_LOCATION;
@@ -1042,7 +1054,7 @@ function renderSympathy() {
         <div class="lname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:16px;height:16px;font-size:9px">${svgIcon('check')}</span></div>
         <div class="lsub">${esc(distLabel(p))}${seen ? ' · ' + esc(seen) : ''}</div>
         <div class="lbtns">
-          <button class="mini no" title="${esc(t('l_decline'))}">${svgIcon('x')}</button>
+          <button class="mini no" title="${esc(outgoing ? t('l_unlike') : t('l_decline'))}">${svgIcon('x')}</button>
           ${outgoing ? '' : `<button class="mini yes" title="${esc(t('l_like_back'))}">${svgIcon('heart')}</button>`}
         </div>
       </div>
@@ -1058,7 +1070,15 @@ function renderSympathy() {
       save(); onMutualLike(id, true); renderSympathy();
     };
     $('.no', card).onclick = () => {
-      if (REAL_DISCOVERY) { realPasses.add(id); APP_STATE.realPasses = [...realPasses]; } else { dyn(id).declined = true; }
+      if (outgoing) {
+        // «Мне нравятся» → undo my like, so the person returns to the orbit
+        if (REAL_DISCOVERY) { realLikes.delete(id); Backend.unlike(id).catch(() => {}); } else { dyn(id).iLiked = false; }
+      } else {
+        // «Я нравлюсь» → (temporary) send them back to the orbit instead of
+        // passing. In real mode this is local — their like is still in the DB,
+        // so they reappear here after a reload.
+        if (REAL_DISCOVERY) { realLikedMe.delete(id); } else { dyn(id).likedMe = false; }
+      }
       save(); renderSympathy(); renderHeader();
     };
   });
@@ -1394,13 +1414,18 @@ function gameRPS(w, name) {
       $$('.rps-btn', wzZone()).forEach((b) => { b.onclick = async () => {
         if (!w.alive) return;
         const mine = b.dataset.m; const theirs = pickOf(moves)[0];
-        wzZone().innerHTML = `<div class="game"><div class="rps-vs">
-          <div class="rps-pick">${emo(mine)}<span>${esc(t('w_game_you'))}</span></div>
-          <div class="rps-x">×</div>
-          <div class="rps-pick">${emo(theirs)}<span>${esc(name)}</span></div></div></div>`;
-        await sleep(1000); if (!w.alive) return;
-        if (mine === theirs) return round(t('w_game_draw'));
-        resolve(beats[mine] === theirs ? 'me' : 'them');
+        const draw = mine === theirs;
+        const iWin = !draw && beats[mine] === theirs;
+        wzZone().innerHTML = `<div class="game">
+          <div class="rps-vs">
+            <div class="rps-pick ${draw ? '' : (iWin ? 'win' : 'lose')}">${emo(mine)}<span>${esc(t('w_game_you'))}</span></div>
+            <div class="rps-x">×</div>
+            <div class="rps-pick ${draw ? '' : (iWin ? 'lose' : 'win')}">${emo(theirs)}<span>${esc(name)}</span></div>
+          </div>
+          <div class="game-msg">${esc(draw ? t('w_game_draw') : (iWin ? t('w_game_win') : t('w_game_lose', { name })))}</div></div>`;
+        if (draw) { await sleep(1200); if (!w.alive) return; return round(t('w_game_draw')); }
+        await sleep(2000); if (!w.alive) return; // let players see who won
+        resolve(iWin ? 'me' : 'them');
       }; });
     };
     round();
@@ -1418,8 +1443,12 @@ function gameDice(w, name) {
       for (let i = 0; i < 10; i++) { if (!w.alive) return; $('#d-me').textContent = pickOf(DICE_FACES); $('#d-them').textContent = pickOf(DICE_FACES); await sleep(80); }
       let me, them; do { me = die6(); them = die6(); } while (me === them);
       $('#d-me').textContent = DICE_FACES[me - 1]; $('#d-them').textContent = DICE_FACES[them - 1];
-      await sleep(800); if (!w.alive) return;
-      resolve(me > them ? 'me' : 'them');
+      const iWin = me > them;
+      $(iWin ? '#d-me' : '#d-them').classList.add('win');
+      $(iWin ? '#d-them' : '#d-me').classList.add('lose');
+      const msg = wzZone().querySelector('.game-msg'); if (msg) msg.textContent = iWin ? t('w_game_win') : t('w_game_lose', { name });
+      await sleep(2000); if (!w.alive) return; // let players see who won
+      resolve(iWin ? 'me' : 'them');
     };
   });
 }
@@ -1442,8 +1471,10 @@ function gameRoulette(w, name) {
         await sleep(delay); delay = Math.min(delay + 14, 280);
       }
       cells.forEach((c) => c.classList.remove('on'));
-      cells[win === 'me' ? 0 : 1].classList.add('on');
-      await sleep(700); if (!w.alive) return;
+      cells[win === 'me' ? 0 : 1].classList.add('on', 'win');
+      cells[win === 'me' ? 1 : 0].classList.add('lose');
+      const msg = wzZone().querySelector('.game-msg'); if (msg) msg.textContent = win === 'me' ? t('w_game_win') : t('w_game_lose', { name });
+      await sleep(2000); if (!w.alive) return; // let players see who won
       resolve(win);
     };
   });
@@ -1839,7 +1870,7 @@ function openSettings() {
 
       <div class="srow-btn" style="flex-wrap:wrap">${esc(t('s_radius'))}
         <div class="range-wrap" style="flex-basis:100%">
-          <input type="range" id="st-radius" min="1" max="10" step="0.5" value="${pr.radiusKm}">
+          <input type="range" id="st-radius" min="1" max="50" step="1" value="${pr.radiusKm}">
           <span class="range-val" id="st-radius-val">${pr.radiusKm} km</span>
         </div>
       </div>
@@ -1856,6 +1887,8 @@ function openSettings() {
         <label class="switch" style="margin-left:auto"><input type="checkbox" id="st-lastseen" ${pr.showLastSeen ? 'checked' : ''}><span class="track"></span></label>
         <div class="srow-hint">${esc(t('set_lastseen_hint'))}</div>
       </div>
+
+      <button class="srow-btn" id="st-geo">${svgIcon('pin')} ${esc(t('s_geo'))}<span class="sv" id="st-geo-val"></span></button>
 
       ${isStandalone()
         ? `<div class="srow-btn">${esc(t('s_installed'))}</div>`
@@ -1896,6 +1929,18 @@ function openSettings() {
   amin.onchange = amax.onchange = () => { APP_STATE.profile.ageMin = +amin.value; APP_STATE.profile.ageMax = +amax.value; save(); renderCurrentView(); };
   const ls = $('#st-lastseen');
   if (ls) ls.onchange = (e) => { APP_STATE.profile.showLastSeen = e.target.checked; save(); if (currentTab !== 'discover') renderCurrentView(); };
+  const geoBtn = $('#st-geo');
+  if (geoBtn) geoBtn.onclick = () => {
+    const val = $('#st-geo-val'); geoBtn.disabled = true; if (val) val.textContent = '…';
+    refreshGeo(async (g) => {
+      geoBtn.disabled = false; if (val) val.textContent = '';
+      if (!g) { toast(t('s_geo_fail')); return; }
+      if (window.Backend && Backend.enabled) { try { await Backend.updateMyGeo(g.lat, g.lng); } catch { /* non-fatal */ } }
+      toast(t('s_geo_ok'));
+      if (window.Backend && Backend.enabled) ensureRealDiscovery(true).then(() => { if (currentTab === 'discover') renderCurrentView(); });
+      else renderCurrentView();
+    });
+  };
   const inst = $('#st-install');
   if (inst) inst.onclick = async () => {
     if (deferredInstall) { deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; openSettings(); }

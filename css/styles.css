@@ -947,6 +947,13 @@ input[type="date"].input, input[type="time"].input { color-scheme: dark; }
 .roul-cells { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; max-width: 320px; }
 .rcell { padding: 22px 12px; border-radius: 16px; background: var(--card); border: 2px solid var(--stroke-2); text-align: center; font-weight: 800; font-size: 16px; color: var(--muted); transition: all 0.1s; }
 .rcell.on { background: var(--grad); border-color: transparent; color: #fff; box-shadow: var(--glow); transform: scale(1.04); }
+/* winner / loser emphasis so it's clear who won (shown for ~2s) */
+.rps-pick.win, .die.win { color: var(--text); }
+.die.win { border-color: var(--green); box-shadow: 0 0 0 2px var(--green), 0 0 20px rgba(52, 211, 153, 0.45); transform: scale(1.06); }
+.rps-pick.win span { color: var(--green); }
+.rps-pick.win { text-shadow: 0 0 18px rgba(52, 211, 153, 0.6); transform: scale(1.12); }
+.rps-pick.lose, .die.lose, .rcell.lose { opacity: 0.4; }
+.rcell.win { border-color: var(--green); }
 
 /* ---------- video message ---------- */
 .vm-block { margin-bottom: 16px; }

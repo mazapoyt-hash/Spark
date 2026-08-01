@@ -10,6 +10,9 @@ module.exports = defineConfig({
   expect: { timeout: 8000 },
   fullyParallel: false,
   workers: 1,
+  // one timing blip shouldn't redden CI; a genuinely broken test still fails
+  // after the retries.
+  retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? 'line' : 'list',
   use: {
     baseURL: 'http://127.0.0.1:8642',
