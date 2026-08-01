@@ -113,6 +113,18 @@ test('date reschedule form opens with a place field', async ({ page }) => {
   await expect(page.locator('#sheet-edit #de-place')).toBeVisible();
 });
 
+test('age filter hides people outside the range', async ({ page }) => {
+  await onboard(page);
+  const before = await page.evaluate(() => deckList().length);
+  expect(before).toBeGreaterThan(0);
+  // narrow the range to an age no demo person has → deck empties
+  const after = await page.evaluate(() => {
+    APP_STATE.profile.ageMin = 40; APP_STATE.profile.ageMax = 45; save();
+    return deckList().length;
+  });
+  expect(after).toBe(0);
+});
+
 test('admin (demo) login + verification queue + reject needs a comment', async ({ page }) => {
   await onboard(page); // submits a verification into same-origin localStorage
   await page.goto('/adminka6582/');
