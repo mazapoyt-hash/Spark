@@ -1074,8 +1074,10 @@ function renderSympathy() {
         // «Мне нравятся» → undo my like, so the person returns to the orbit
         if (REAL_DISCOVERY) { realLikes.delete(id); Backend.unlike(id).catch(() => {}); } else { dyn(id).iLiked = false; }
       } else {
-        // «Я нравлюсь» → not interested (pass)
-        if (REAL_DISCOVERY) { realPasses.add(id); APP_STATE.realPasses = [...realPasses]; } else { dyn(id).declined = true; }
+        // «Я нравлюсь» → (temporary) send them back to the orbit instead of
+        // passing. In real mode this is local — their like is still in the DB,
+        // so they reappear here after a reload.
+        if (REAL_DISCOVERY) { realLikedMe.delete(id); } else { dyn(id).likedMe = false; }
       }
       save(); renderSympathy(); renderHeader();
     };
