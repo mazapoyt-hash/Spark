@@ -643,21 +643,89 @@ async function fetchPlaces(center) {
    browser search box. Picking one records its real coordinates so the map and
    travel-time estimate work for a freely-typed place too. */
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
-async function searchPlaces(query) {
-  const q = (query || '').trim();
-  if (q.length < 3) return [];
-  const loc = myLoc();
-  let url = `${NOMINATIM_URL}?format=jsonv2&limit=6&addressdetails=0&accept-language=${encodeURIComponent(APP_STATE.profile.locale || 'en')}&q=${encodeURIComponent(q)}`;
-  if (loc) { const d = 0.15; url += `&viewbox=${loc.lng - d},${loc.lat - d},${loc.lng + d},${loc.lat + d}`; } // ~15km bias
+const PLACE_RADIUS_M = 20000; // only ever suggest places within ~20 km of the user
+const rxEsc = (s) => s.replace(/[\\.^$|?*+()[\]{}"]/g, '\\$&');
+
+/* International chains are tagged in OSM under their canonical (usually Latin)
+   name, so typing the brand in another language/alphabet ("макдональдс") finds
+   nothing locally. Normalise well-known brands to that canonical form before
+   searching, so the nearest branch shows up regardless of how it's typed. */
+const BRAND_ALIASES = [
+  [/макдо|макдак|mcdonald|mcdon/i, "McDonald's"],
+  [/кфс|kfc|кентак/i, 'KFC'],
+  [/бургер\s*кинг|burger\s*king/i, 'Burger King'],
+  [/старбакс|starbucks/i, 'Starbucks'],
+  [/сабв(?:е|э)й|subway/i, 'Subway'],
+  [/домино|domino/i, "Domino's"],
+  [/пицц\w*\s*хат|pizza\s*hut/i, 'Pizza Hut'],
+  [/данкин|dunkin/i, 'Dunkin'],
+  [/сташбакс|costa\s*coffee|коста\s*кофе/i, 'Costa'],
+  [/икеа|ikea/i, 'IKEA'],
+];
+const aliasBrand = (q) => { for (const [rx, b] of BRAND_ALIASES) { if (rx.test(q)) return b; } return null; };
+const distTag = (km) => (km < 1 ? Math.round(km * 1000) + ' m' : km.toFixed(1) + ' km');
+
+/* Primary search: OpenStreetMap Overpass around the user. Matches the typed
+   text against every language variant of a place's name/brand, so "макдональдс",
+   "McDonald's" or "Mc" all surface the nearest McDonald's — and results are
+   strictly nearby (around:), never on another continent. */
+async function searchPlacesOverpass(q, c, loc) {
+  const Q = rxEsc(q);
+  const keys = ['name', 'int_name', 'brand', 'official_name', 'name:en', 'brand:en'];
+  if (loc !== 'en') keys.push('name:' + loc, 'brand:' + loc);
+  const body = `[out:json][timeout:12];(`
+    + keys.map((k) => `nwr["${k}"~"${Q}",i](around:${PLACE_RADIUS_M},${c.lat},${c.lng});`).join('')
+    + `);out center 50;`;
+  const r = await fetchT(PLACES_URL + '?data=' + encodeURIComponent(body), 8000);
+  if (!r.ok) return [];
+  const els = ((await r.json()).elements) || [];
+  const seen = new Set(); const out = [];
+  for (const el of els) {
+    const tg = el.tags || {};
+    const name = tg.name || tg['name:' + loc] || tg['name:en'] || tg.brand || tg.int_name;
+    if (!name) continue;
+    const lat = el.lat != null ? el.lat : (el.center && el.center.lat);
+    const lng = el.lon != null ? el.lon : (el.center && el.center.lon);
+    if (lat == null || lng == null) continue;
+    const key = name.toLowerCase() + '@' + lat.toFixed(3) + ',' + lng.toFixed(3);
+    if (seen.has(key)) continue; seen.add(key);
+    const d = haversineKm(c, { lat, lng });
+    const where = tg['addr:street'] || tg['addr:city'] || tg['addr:suburb'] || '';
+    if (!REAL_PLACE_GEO[name]) REAL_PLACE_GEO[name] = { lat, lng }; // keep the nearest
+    out.push({ name, label: (where ? name + ' · ' + where : name) + ' · ' + distTag(d), d });
+  }
+  return out.sort((a, b) => a.d - b.d).slice(0, 8).map(({ name, label }) => ({ name, label }));
+}
+
+/* Fallback: Nominatim, hard-bounded to the user's area (bounded=1) so it can
+   never return far-away matches when Overpass finds nothing. */
+async function searchPlacesNominatim(q, c) {
+  const d = 0.22; // ~24 km box
+  const url = `${NOMINATIM_URL}?format=jsonv2&limit=8&addressdetails=0&bounded=1`
+    + `&viewbox=${c.lng - d},${c.lat - d},${c.lng + d},${c.lat + d}&q=${encodeURIComponent(q)}`;
   const r = await fetchT(url, 6000);
   if (!r.ok) return [];
   const data = await r.json();
   return (data || []).map((x) => {
     const name = (x.name && x.name.trim()) || String(x.display_name || '').split(',')[0].trim();
     const lat = parseFloat(x.lat), lng = parseFloat(x.lon);
-    if (name && Number.isFinite(lat) && Number.isFinite(lng)) REAL_PLACE_GEO[name] = { lat, lng };
-    return { name, label: x.display_name || name };
-  }).filter((x) => x.name);
+    if (!name || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (!REAL_PLACE_GEO[name]) REAL_PLACE_GEO[name] = { lat, lng };
+    const km = haversineKm(c, { lat, lng });
+    return { name, label: name + ' · ' + distTag(km) };
+  }).filter(Boolean);
+}
+
+async function searchPlaces(query) {
+  const q = (query || '').trim();
+  if (q.length < 3) return [];
+  const c = myLoc();
+  if (!c) return [];
+  const term = aliasBrand(q) || q; // normalise known brands to their OSM form
+  let out = [];
+  try { out = await searchPlacesOverpass(term, c, (APP_STATE.profile.locale || 'en').slice(0, 2)); } catch { out = []; }
+  if (!out.length) { try { out = await searchPlacesNominatim(term, c); } catch { out = []; } }
+  return out;
 }
 
 /* attach a debounced suggestion dropdown to a place <input>. Reused by the
@@ -678,7 +746,7 @@ function bindPlaceAutocomplete(input, box, onPick) {
       box.innerHTML = results.map((r) => `<button type="button" class="acitem" data-name="${esc(r.name)}"><b>${esc(r.name)}</b><span>${esc(r.label)}</span></button>`).join('');
       box.hidden = false;
       $$('.acitem', box).forEach((b) => { b.onmousedown = (e) => { e.preventDefault(); }; b.onclick = () => { onPick(b.dataset.name); hide(); }; });
-    }, 320);
+    }, 420);
   });
   input.addEventListener('blur', () => setTimeout(hide, 180)); // let a click land first
 }
