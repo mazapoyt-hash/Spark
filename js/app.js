@@ -1054,7 +1054,7 @@ function renderSympathy() {
         <div class="lname">${esc(p.name)}, ${p.age} <span class="vbadge" style="width:16px;height:16px;font-size:9px">${svgIcon('check')}</span></div>
         <div class="lsub">${esc(distLabel(p))}${seen ? ' · ' + esc(seen) : ''}</div>
         <div class="lbtns">
-          <button class="mini no" title="${esc(t('l_decline'))}">${svgIcon('x')}</button>
+          <button class="mini no" title="${esc(outgoing ? t('l_unlike') : t('l_decline'))}">${svgIcon('x')}</button>
           ${outgoing ? '' : `<button class="mini yes" title="${esc(t('l_like_back'))}">${svgIcon('heart')}</button>`}
         </div>
       </div>
@@ -1070,7 +1070,13 @@ function renderSympathy() {
       save(); onMutualLike(id, true); renderSympathy();
     };
     $('.no', card).onclick = () => {
-      if (REAL_DISCOVERY) { realPasses.add(id); APP_STATE.realPasses = [...realPasses]; } else { dyn(id).declined = true; }
+      if (outgoing) {
+        // «Мне нравятся» → undo my like, so the person returns to the orbit
+        if (REAL_DISCOVERY) { realLikes.delete(id); Backend.unlike(id).catch(() => {}); } else { dyn(id).iLiked = false; }
+      } else {
+        // «Я нравлюсь» → not interested (pass)
+        if (REAL_DISCOVERY) { realPasses.add(id); APP_STATE.realPasses = [...realPasses]; } else { dyn(id).declined = true; }
+      }
       save(); renderSympathy(); renderHeader();
     };
   });
