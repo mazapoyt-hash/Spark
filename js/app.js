@@ -18,7 +18,7 @@ function defaultState() {
     profile: {
       id: uid(), name: '', age: null, gender: 'm', lookingFor: 'w',
       langs: [], photos: [], verified: false, verifyStatus: 'none', verifyId: null, verifyComment: '',
-      locale: detectLocale(), radiusKm: 10, showLastSeen: true,
+      locale: detectLocale(), radiusKm: 10, showLastSeen: true, ageMin: 18, ageMax: 99,
     },
     // dynamic per-person flags
     people: Object.fromEntries(DEMO_PEOPLE.map((p) => [p.id, {
@@ -147,8 +147,11 @@ function heartBurst(x, y, n = 12) {
 
 /* ---------------- filters ---------------- */
 function matchesPref(p) {
-  const lf = APP_STATE.profile.lookingFor;
-  return lf === 'all' || p.gender === (lf === 'w' ? 'w' : 'm');
+  const pr = APP_STATE.profile;
+  if (!(pr.lookingFor === 'all' || p.gender === (pr.lookingFor === 'w' ? 'w' : 'm'))) return false;
+  const a = +p.age;
+  if (a && (a < (pr.ageMin || 18) || a > (pr.ageMax || 99))) return false; // age unknown → don't hide
+  return true;
 }
 const inRadius = (p) => p.km <= APP_STATE.profile.radiusKm;
 
@@ -1773,6 +1776,14 @@ function openSettings() {
         </div>
       </div>
 
+      <div class="srow-btn" style="flex-wrap:wrap">${esc(t('s_age'))}
+        <span class="range-val" id="st-age-val" style="margin-left:auto">${pr.ageMin} – ${pr.ageMax}</span>
+        <div class="agew" style="flex-basis:100%">
+          <input type="range" id="st-age-min" min="18" max="99" step="1" value="${pr.ageMin}">
+          <input type="range" id="st-age-max" min="18" max="99" step="1" value="${pr.ageMax}">
+        </div>
+      </div>
+
       <div class="srow-btn" style="flex-wrap:wrap">${esc(t('set_lastseen'))}
         <label class="switch" style="margin-left:auto"><input type="checkbox" id="st-lastseen" ${pr.showLastSeen ? 'checked' : ''}><span class="track"></span></label>
         <div class="srow-hint">${esc(t('set_lastseen_hint'))}</div>
@@ -1805,6 +1816,16 @@ function openSettings() {
   const rr = $('#st-radius');
   rr.oninput = () => { $('#st-radius-val').textContent = rr.value + ' km'; };
   rr.onchange = () => { APP_STATE.profile.radiusKm = +rr.value; save(); renderCurrentView(); };
+  const amin = $('#st-age-min'), amax = $('#st-age-max');
+  const syncAge = (e) => {
+    let lo = +amin.value, hi = +amax.value;
+    if (lo > hi) { // keep the two thumbs from crossing
+      if (e && e.target === amin) { hi = lo; amax.value = hi; } else { lo = hi; amin.value = lo; }
+    }
+    $('#st-age-val').textContent = lo + ' – ' + hi;
+  };
+  amin.oninput = amax.oninput = syncAge;
+  amin.onchange = amax.onchange = () => { APP_STATE.profile.ageMin = +amin.value; APP_STATE.profile.ageMax = +amax.value; save(); renderCurrentView(); };
   const ls = $('#st-lastseen');
   if (ls) ls.onchange = (e) => { APP_STATE.profile.showLastSeen = e.target.checked; save(); if (currentTab !== 'discover') renderCurrentView(); };
   const inst = $('#st-install');
