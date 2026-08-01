@@ -1412,13 +1412,18 @@ function gameRPS(w, name) {
       $$('.rps-btn', wzZone()).forEach((b) => { b.onclick = async () => {
         if (!w.alive) return;
         const mine = b.dataset.m; const theirs = pickOf(moves)[0];
-        wzZone().innerHTML = `<div class="game"><div class="rps-vs">
-          <div class="rps-pick">${emo(mine)}<span>${esc(t('w_game_you'))}</span></div>
-          <div class="rps-x">×</div>
-          <div class="rps-pick">${emo(theirs)}<span>${esc(name)}</span></div></div></div>`;
-        await sleep(1000); if (!w.alive) return;
-        if (mine === theirs) return round(t('w_game_draw'));
-        resolve(beats[mine] === theirs ? 'me' : 'them');
+        const draw = mine === theirs;
+        const iWin = !draw && beats[mine] === theirs;
+        wzZone().innerHTML = `<div class="game">
+          <div class="rps-vs">
+            <div class="rps-pick ${draw ? '' : (iWin ? 'win' : 'lose')}">${emo(mine)}<span>${esc(t('w_game_you'))}</span></div>
+            <div class="rps-x">×</div>
+            <div class="rps-pick ${draw ? '' : (iWin ? 'lose' : 'win')}">${emo(theirs)}<span>${esc(name)}</span></div>
+          </div>
+          <div class="game-msg">${esc(draw ? t('w_game_draw') : (iWin ? t('w_game_win') : t('w_game_lose', { name })))}</div></div>`;
+        if (draw) { await sleep(1200); if (!w.alive) return; return round(t('w_game_draw')); }
+        await sleep(2000); if (!w.alive) return; // let players see who won
+        resolve(iWin ? 'me' : 'them');
       }; });
     };
     round();
@@ -1436,8 +1441,12 @@ function gameDice(w, name) {
       for (let i = 0; i < 10; i++) { if (!w.alive) return; $('#d-me').textContent = pickOf(DICE_FACES); $('#d-them').textContent = pickOf(DICE_FACES); await sleep(80); }
       let me, them; do { me = die6(); them = die6(); } while (me === them);
       $('#d-me').textContent = DICE_FACES[me - 1]; $('#d-them').textContent = DICE_FACES[them - 1];
-      await sleep(800); if (!w.alive) return;
-      resolve(me > them ? 'me' : 'them');
+      const iWin = me > them;
+      $(iWin ? '#d-me' : '#d-them').classList.add('win');
+      $(iWin ? '#d-them' : '#d-me').classList.add('lose');
+      const msg = wzZone().querySelector('.game-msg'); if (msg) msg.textContent = iWin ? t('w_game_win') : t('w_game_lose', { name });
+      await sleep(2000); if (!w.alive) return; // let players see who won
+      resolve(iWin ? 'me' : 'them');
     };
   });
 }
@@ -1460,8 +1469,10 @@ function gameRoulette(w, name) {
         await sleep(delay); delay = Math.min(delay + 14, 280);
       }
       cells.forEach((c) => c.classList.remove('on'));
-      cells[win === 'me' ? 0 : 1].classList.add('on');
-      await sleep(700); if (!w.alive) return;
+      cells[win === 'me' ? 0 : 1].classList.add('on', 'win');
+      cells[win === 'me' ? 1 : 0].classList.add('lose');
+      const msg = wzZone().querySelector('.game-msg'); if (msg) msg.textContent = win === 'me' ? t('w_game_win') : t('w_game_lose', { name });
+      await sleep(2000); if (!w.alive) return; // let players see who won
       resolve(win);
     };
   });
