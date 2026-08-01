@@ -575,7 +575,19 @@ function ensureGeo(cb) {
   navigator.geolocation.getCurrentPosition(
     (pos) => { USER_GEO = { lat: pos.coords.latitude, lng: pos.coords.longitude }; cb(USER_GEO); },
     () => cb(null),
-    { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 },
+    // high accuracy + a short max-age so we get a fresh fix (a stale cached
+    // position from another city would push people out of the search radius)
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+  );
+}
+/* force a fresh fix (ignores the cache) — for the "update my location" button,
+   so someone living between two cities can re-anchor on demand */
+function refreshGeo(cb) {
+  if (!navigator.geolocation) { if (cb) cb(null); return; }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => { USER_GEO = { lat: pos.coords.latitude, lng: pos.coords.longitude }; if (cb) cb(USER_GEO); },
+    () => { if (cb) cb(null); },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
   );
 }
 const myLoc = () => USER_GEO || MY_LOCATION;
@@ -1839,7 +1851,7 @@ function openSettings() {
 
       <div class="srow-btn" style="flex-wrap:wrap">${esc(t('s_radius'))}
         <div class="range-wrap" style="flex-basis:100%">
-          <input type="range" id="st-radius" min="1" max="10" step="0.5" value="${pr.radiusKm}">
+          <input type="range" id="st-radius" min="1" max="50" step="1" value="${pr.radiusKm}">
           <span class="range-val" id="st-radius-val">${pr.radiusKm} km</span>
         </div>
       </div>
@@ -1856,6 +1868,8 @@ function openSettings() {
         <label class="switch" style="margin-left:auto"><input type="checkbox" id="st-lastseen" ${pr.showLastSeen ? 'checked' : ''}><span class="track"></span></label>
         <div class="srow-hint">${esc(t('set_lastseen_hint'))}</div>
       </div>
+
+      <button class="srow-btn" id="st-geo">${svgIcon('pin')} ${esc(t('s_geo'))}<span class="sv" id="st-geo-val"></span></button>
 
       ${isStandalone()
         ? `<div class="srow-btn">${esc(t('s_installed'))}</div>`
@@ -1896,6 +1910,18 @@ function openSettings() {
   amin.onchange = amax.onchange = () => { APP_STATE.profile.ageMin = +amin.value; APP_STATE.profile.ageMax = +amax.value; save(); renderCurrentView(); };
   const ls = $('#st-lastseen');
   if (ls) ls.onchange = (e) => { APP_STATE.profile.showLastSeen = e.target.checked; save(); if (currentTab !== 'discover') renderCurrentView(); };
+  const geoBtn = $('#st-geo');
+  if (geoBtn) geoBtn.onclick = () => {
+    const val = $('#st-geo-val'); geoBtn.disabled = true; if (val) val.textContent = '…';
+    refreshGeo(async (g) => {
+      geoBtn.disabled = false; if (val) val.textContent = '';
+      if (!g) { toast(t('s_geo_fail')); return; }
+      if (window.Backend && Backend.enabled) { try { await Backend.updateMyGeo(g.lat, g.lng); } catch { /* non-fatal */ } }
+      toast(t('s_geo_ok'));
+      if (window.Backend && Backend.enabled) ensureRealDiscovery(true).then(() => { if (currentTab === 'discover') renderCurrentView(); });
+      else renderCurrentView();
+    });
+  };
   const inst = $('#st-install');
   if (inst) inst.onclick = async () => {
     if (deferredInstall) { deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; openSettings(); }
