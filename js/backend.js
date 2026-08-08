@@ -58,15 +58,30 @@
       // the PUBLIC 'photos' bucket so other users see them in discovery.
       if (photoItems && photoItems.length) {
         try {
+          const stamp = Date.now();
           const urls = [];
           for (let i = 0; i < photoItems.length; i++) {
             const it = photoItems[i];
-            if (it && it.url) { urls.push(it.url); continue; } // keep existing
-            const path = `${user.id}/photo-${i}.jpg`;
+            if (it && it.url) {
+              // Keep the existing photo, but refresh its cache-busting version so
+              // a stale CDN/browser copy (from an earlier overwrite) is dropped.
+              urls.push(it.url.split('?')[0] + '?v=' + stamp);
+              continue;
+            }
+            // New photo → a UNIQUE path, so its public URL is brand-new and can
+            // never collide with a cached older image at a fixed path.
+            const path = `${user.id}/${stamp}-${i}.jpg`;
             const up = await client.storage.from('photos').upload(path, it.blob, { contentType: 'image/jpeg', upsert: true });
             if (up.error) throw up.error;
             urls.push(client.storage.from('photos').getPublicUrl(path).data.publicUrl);
           }
+          // remove any older photo objects that are no longer referenced
+          try {
+            const keep = new Set(urls.map((u) => decodeURIComponent(u.split('?')[0].split('/photos/')[1] || '')));
+            const { data: existing } = await client.storage.from('photos').list(user.id);
+            const stale = (existing || []).map((f) => `${user.id}/${f.name}`).filter((p) => !keep.has(p));
+            if (stale.length) await client.storage.from('photos').remove(stale);
+          } catch { /* cleanup is best-effort */ }
           await client.from('profiles').update({ photos: urls }).eq('id', user.id);
         } catch (e) { try { console.warn('profile photos upload failed:', e.message || e); } catch { /* no console */ } }
       }
@@ -260,7 +275,8 @@
       const path = `bots/${botId}/photo-0.jpg`;
       const up = await client.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg', upsert: true });
       if (up.error) throw up.error;
-      return client.storage.from('photos').getPublicUrl(path).data.publicUrl;
+      // cache-bust so a re-uploaded bot photo isn't served stale from the fixed path
+      return client.storage.from('photos').getPublicUrl(path).data.publicUrl + '?v=' + Date.now();
     },
 
     /* ---- client error monitoring (see js/errlog.js) ---- */

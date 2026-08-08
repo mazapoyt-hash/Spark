@@ -980,7 +980,7 @@ function openMsgSheet({ partner, notes, replyText, persist, onChange }) {
         ${notes.length ? `<div class="note-log" id="nt-log">${notes.map((m) => m.who === 'me'
           ? `<div class="pb me"><img src="${myAvatar()}" alt=""><div class="bub">${esc(m.text)}</div></div>`
           : `<div class="pb"><img src="${pa}" alt=""><div class="bub ok">${esc(m.text)}</div></div>`).join('')}</div>` : ''}
-        <div class="note-presets">${notePresets().map((x) => `<button class="chip npreset">${esc(x)}</button>`).join('')}</div>
+        ${notes.length ? '' : `<div class="note-presets">${notePresets().map((x) => `<button class="chip npreset">${esc(x)}</button>`).join('')}</div>`}
         <div class="note-in">
           <input class="input" id="nt-in" maxlength="120" placeholder="${esc(t('note_ph', { name: partner.name }))}" ${atLimit ? 'disabled' : ''}>
           <button class="btn btn-primary btn-sm" id="nt-send" ${atLimit ? 'disabled' : ''}>${svgIcon('check')}</button>
@@ -2145,6 +2145,7 @@ function startVerification(onDone) {
   const draw = () => {
     v.innerHTML = `
       <div class="ve-card">
+        <button class="icon-btn ve-x" id="ve-close" aria-label="${esc(t('back'))}">${svgIcon('x')}</button>
         <div class="ve-h">${esc(t('ve_title'))}</div>
         <p class="ve-sub">${esc(t('ve_sub'))}</p>
         <div class="ve-pair">
@@ -2164,6 +2165,7 @@ function startVerification(onDone) {
         <button class="btn btn-primary" id="ve-submit" ${selfie ? '' : 'disabled'}>${svgIcon('check')} ${esc(t('ve_submit'))}</button>
         <p class="ve-note">${svgIcon('info')} ${esc(t('ve_note'))}</p>
       </div>`;
+    $('#ve-close').onclick = () => { close(); if (onDone) onDone(); };
     $('#ve-shot').onclick = () => file.click();
     const rt = $('#ve-retake'); if (rt) rt.onclick = () => file.click();
     $('#ve-submit').onclick = async () => {
