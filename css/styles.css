@@ -342,6 +342,7 @@ input[type="date"].input, input[type="time"].input { color-scheme: dark; }
   text-align: left;
   padding: calc(26px + var(--safe-t)) 24px calc(30px + var(--safe-b));
 }
+.ve-x { position: fixed; top: calc(14px + var(--safe-t)); right: 16px; z-index: 5; background: var(--card-2); border: 1px solid var(--stroke); }
 .ve-h { font-size: 28px; font-weight: 800; letter-spacing: -0.01em; }
 .ve-sub { color: var(--muted); font-size: 14px; margin: 8px 0 20px; }
 .ve-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
